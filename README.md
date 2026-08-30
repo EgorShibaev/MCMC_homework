@@ -18,15 +18,24 @@ sampling failures; it does not hide deliberate implementation bugs.
 - `mcmc_homework/metrics.py` — standardized sliced-Wasserstein error, ESS, and
   target-specific diagnostics.
 - `mcmc_homework/visualization.py` — trajectory, trace, autocorrelation, and
-  mode-proportion plots.
+  mode-proportion plots, plus the fixed-budget SWD convergence figure.
 - `mcmc_homework/experiments.py` — reproducible runs and repeated-seed
-  benchmarks.
+  benchmarks, target-specific pass thresholds, and convergence calculations.
 - `mcmc_homework/widgets.py` — sliders and button-driven notebook interface.
 - `tests/` — numerical correctness and regression tests.
 
 The fourth target is a 10:90 Gaussian mixture. Its guided notebook experiment
 shows a finite-budget ULA chain missing the rare mode while tuned HMC repeatedly
 crosses the barrier and approaches the correct mode proportions.
+
+## Homework pass rule
+
+The official benchmark uses 4,000 recorded chain states, 25% burn-in, and seeds
+`(11, 23, 47)`. A target-method row passes when its **worst-seed standardized
+sliced-Wasserstein distance** is at most 0.50 for the tilted Gaussian, 0.50 for
+the banana, or 0.75 for the 65:35 mixture, with no divergent run. All 12 core
+rows must pass. The notebook table reports `PASS` or `TUNE MORE`, and an
+adjacent plot tracks the same worst-seed SWD as retained iterations accumulate.
 
 ## Setup
 

@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 from html import escape
+from collections.abc import Sequence
 from typing import Any, Mapping
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
 
-from .experiments import Experiment
+from .experiments import (
+    METHODS,
+    SWD_PASS_THRESHOLDS,
+    BenchmarkResult,
+    Experiment,
+    swd_convergence,
+)
 from .metrics import autocorrelation_1d, get_reference_sample
 from .targets import TARGETS, Target2D
 
@@ -243,6 +250,59 @@ def plot_mode_ratio_comparison(
     return figure
 
 
+def plot_swd_convergence(results: Sequence[BenchmarkResult]) -> Figure:
+    """Plot the grading metric over retained iterations for every benchmark row."""
+
+    if not results:
+        raise ValueError("At least one benchmark result is required.")
+    target_keys = list(
+        dict.fromkeys(result.target_key for result in results)
+    )
+    figure, axes = plt.subplots(
+        1, len(target_keys), figsize=(5.2 * len(target_keys), 4.2), squeeze=False
+    )
+    method_colors = dict(zip(METHODS, ("C0", "C1", "C2", "C3")))
+    for axis, target_key in zip(axes.ravel(), target_keys):
+        target_results = [
+            result for result in results if result.target_key == target_key
+        ]
+        for result in target_results:
+            curve = swd_convergence(result.experiments)
+            values = curve["worst_swd"]
+            finite = np.isfinite(values)
+            axis.plot(
+                curve["retained"][finite],
+                values[finite],
+                marker="o",
+                markersize=3.0,
+                linewidth=1.5,
+                color=method_colors.get(result.method),
+                label=result.method,
+            )
+        threshold = SWD_PASS_THRESHOLDS[target_key]
+        axis.axhline(
+            threshold,
+            color="black",
+            linestyle="--",
+            linewidth=1.25,
+            label=f"pass threshold = {threshold:.2f}",
+        )
+        axis.set(
+            xscale="log",
+            xlabel="retained iterations",
+            ylabel="worst-seed SWD (lower is better)",
+            title=TARGETS[target_key].name,
+        )
+        axis.set_ylim(bottom=0.0)
+        axis.legend(fontsize=8)
+    figure.suptitle(
+        "Does each method reach the fixed-budget SWD requirement?",
+        fontsize=13,
+    )
+    figure.tight_layout(rect=(0, 0, 1, 0.93))
+    return figure
+
+
 def _format_number(value: Any, digits: int = 3) -> str:
     if value is None:
         return "N/A"
@@ -301,4 +361,54 @@ def metrics_html(
         "<thead><tr><th style='text-align:left'>Metric</th><th style='text-align:left'>Value</th>"
         "<th style='text-align:left'>How to read it</th></tr></thead>"
         f"<tbody>{body}</tbody></table>"
+    )
+
+
+def benchmark_results_html(results: Sequence[BenchmarkResult]) -> str:
+    """Render the fixed-budget pass rule and all target-method statuses."""
+
+    rendered_rows = []
+    passed_count = sum(result.passed for result in results)
+    for result in results:
+        summary = result.summary
+        acceptance = result.acceptance_rate
+        acceptance_text = (
+            "N/A" if acceptance is None else f"{100.0 * acceptance:.1f}%"
+        )
+        parameter = "σ" if result.method == "RWMH" else "η"
+        setting_text = f"{parameter}={result.scale:.4g}"
+        if result.n_leapfrog is not None:
+            setting_text = f"ε={result.scale:.4g}, L={result.n_leapfrog}"
+        status = "PASS" if result.passed else "TUNE MORE"
+        status_color = "#18864b" if result.passed else "#b33a3a"
+        rendered_rows.append(
+            "<tr>"
+            f"<td>{escape(result.target_key)}</td>"
+            f"<td>{escape(result.method)}</td>"
+            f"<td>{setting_text}</td>"
+            f"<td>{summary['mean_swd']:.3f} ± {summary['sd_swd']:.3f}</td>"
+            f"<td><b>{summary['worst_swd']:.3f}</b> / ≤ {result.threshold:.2f}</td>"
+            f"<td>{summary['mean_ess_per_1000']:.1f}</td>"
+            f"<td>{acceptance_text}</td>"
+            f"<td>{int(summary['divergent_runs'])}</td>"
+            f"<td><b style='color:{status_color}'>{status}</b></td>"
+            "</tr>"
+        )
+    overall_status = (
+        "PASS: all target–method pairs meet the requirement."
+        if passed_count == len(results)
+        else f"NOT YET: {passed_count}/{len(results)} rows pass. Tune every remaining row."
+    )
+    header = (
+        "<tr><th>target</th><th>method</th><th>setting</th>"
+        "<th>mean ± SD SWD</th><th>worst / required</th>"
+        "<th>ESS/1k</th><th>accept</th><th>diverged</th><th>status</th></tr>"
+    )
+    return (
+        "<div style='margin:0.4em 0 0.8em 0'>"
+        "<b>Pass rule:</b> worst-seed SWD must meet the target threshold and "
+        "all three runs must remain finite.<br>"
+        f"<b>Homework status:</b> {escape(overall_status)}"
+        "</div><table>"
+        f"{header}{''.join(rendered_rows)}</table>"
     )

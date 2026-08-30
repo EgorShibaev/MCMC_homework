@@ -10,11 +10,14 @@ from mcmc_homework import (
     CORE_TARGET_KEYS,
     DEFAULT_SETTINGS,
     TARGETS,
+    BenchmarkResult,
     gradient_check_report,
     plot_chain_panel,
     plot_mode_ratio_comparison,
     plot_sampling_run,
+    plot_swd_convergence,
     run_experiment,
+    summarize_experiments,
 )
 from mcmc_homework.experiments import METHODS
 
@@ -60,6 +63,50 @@ def main() -> None:
     figure.suptitle("Correct sampler implementations at untuned starting settings")
     figure.savefig(output_dir / "sampler_comparison.png", dpi=150, bbox_inches="tight")
     plt.close(figure)
+
+    benchmark_preview = [
+        BenchmarkResult(
+            target_key=target_key,
+            method=method,
+            scale=next(
+                experiment.result.scale
+                for experiment in experiments
+                if experiment.target_key == target_key
+                and experiment.result.method == method
+            ),
+            n_leapfrog=(
+                next(
+                    experiment.result.n_leapfrog
+                    for experiment in experiments
+                    if experiment.target_key == target_key
+                    and experiment.result.method == method
+                )
+                if method == "HMC"
+                else None
+            ),
+            experiments=[
+                experiment
+                for experiment in experiments
+                if experiment.target_key == target_key
+                and experiment.result.method == method
+            ],
+            summary=summarize_experiments(
+                [
+                    experiment
+                    for experiment in experiments
+                    if experiment.target_key == target_key
+                    and experiment.result.method == method
+                ]
+            ),
+        )
+        for target_key in CORE_TARGET_KEYS
+        for method in METHODS
+    ]
+    convergence = plot_swd_convergence(benchmark_preview)
+    convergence.savefig(
+        output_dir / "swd_convergence.png", dpi=150, bbox_inches="tight"
+    )
+    plt.close(convergence)
 
     showcase = next(
         item

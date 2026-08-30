@@ -8,7 +8,11 @@ from typing import Any
 
 import numpy as np
 
-from .metrics import compute_metrics
+from .metrics import (
+    compute_metrics,
+    get_reference_sample,
+    standardized_sliced_wasserstein,
+)
 from .samplers import SamplerResult, run_sampler
 from .targets import Array, TARGETS
 
@@ -16,6 +20,17 @@ from .targets import Array, TARGETS
 METHODS = ("RWMH", "ULA", "MALA", "HMC")
 CORE_TARGET_KEYS = ("gaussian", "banana", "mixture")
 BENCHMARK_SEEDS = (11, 23, 47)
+
+# A row passes only when its *worst* fixed-seed SWD is at or below the
+# target-specific threshold and none of the chains diverged.  These thresholds
+# were calibrated with the correct reference implementations at the fixed
+# 4,000-state homework budget.  They are attainable by every method, but
+# the deliberately untuned defaults do not all pass.
+SWD_PASS_THRESHOLDS: dict[str, float] = {
+    "gaussian": 0.50,
+    "banana": 0.50,
+    "mixture": 0.75,
+}
 
 
 # Deliberately reasonable starting guesses, not homework answers.
@@ -46,6 +61,35 @@ class Experiment:
     burn_in: int
     seed: int
     metrics: dict[str, Any]
+
+
+@dataclass
+class BenchmarkResult:
+    """Repeated-seed result for one target, method, and hyperparameter setting."""
+
+    target_key: str
+    method: str
+    scale: float
+    n_leapfrog: int | None
+    experiments: list[Experiment]
+    summary: dict[str, float]
+
+    @property
+    def acceptance_rate(self) -> float | None:
+        values = [
+            experiment.metrics["acceptance_rate"]
+            for experiment in self.experiments
+            if experiment.metrics["acceptance_rate"] is not None
+        ]
+        return float(np.mean(values)) if values else None
+
+    @property
+    def threshold(self) -> float:
+        return SWD_PASS_THRESHOLDS[self.target_key]
+
+    @property
+    def passed(self) -> bool:
+        return benchmark_passed(self.target_key, self.summary)
 
 
 def run_experiment(
@@ -132,6 +176,17 @@ def benchmark_setting(
     return experiments, summarize_experiments(experiments)
 
 
+def benchmark_passed(target_key: str, summary: Mapping[str, float]) -> bool:
+    """Apply the public homework pass rule to one repeated-seed summary."""
+
+    if target_key not in SWD_PASS_THRESHOLDS:
+        raise KeyError(f"No SWD pass threshold is defined for {target_key!r}.")
+    return bool(
+        summary["worst_swd"] <= SWD_PASS_THRESHOLDS[target_key]
+        and summary["divergent_runs"] == 0
+    )
+
+
 def normalized_setting(
     settings: Mapping[tuple[str, str], Mapping[str, float | int]],
     target_key: str,
@@ -141,3 +196,111 @@ def normalized_setting(
 
     setting = settings[(target_key, method)]
     return float(setting["scale"]), int(setting.get("n_leapfrog", 10))
+
+
+def benchmark_all_settings(
+    settings: Mapping[tuple[str, str], Mapping[str, float | int]],
+    n_steps: int = 4000,
+    burn_fraction: float = 0.25,
+    seeds: Sequence[int] = BENCHMARK_SEEDS,
+) -> list[BenchmarkResult]:
+    """Benchmark every core target-method pair at one fixed recorded-state budget."""
+
+    results: list[BenchmarkResult] = []
+    for target_key in CORE_TARGET_KEYS:
+        for method in METHODS:
+            scale, n_leapfrog = normalized_setting(settings, target_key, method)
+            experiments, summary = benchmark_setting(
+                target_key,
+                method,
+                scale,
+                seeds=seeds,
+                n_steps=n_steps,
+                burn_fraction=burn_fraction,
+                n_leapfrog=n_leapfrog,
+            )
+            results.append(
+                BenchmarkResult(
+                    target_key=target_key,
+                    method=method,
+                    scale=scale,
+                    n_leapfrog=n_leapfrog if method == "HMC" else None,
+                    experiments=experiments,
+                    summary=summary,
+                )
+            )
+    return results
+
+
+def swd_convergence(
+    experiments: Sequence[Experiment],
+    checkpoints: Sequence[int] | None = None,
+) -> dict[str, Array]:
+    """Track mean and worst-seed SWD over nested post-burn-in prefixes.
+
+    The x-axis is the number of retained transitions, not wall-clock time.
+    Prefixes reuse the exact reference sample and fixed projection directions
+    used by the final benchmark score.
+    """
+
+    if not experiments:
+        raise ValueError("At least one experiment is required.")
+    target_key = experiments[0].target_key
+    if any(experiment.target_key != target_key for experiment in experiments):
+        raise ValueError("All experiments must use the same target.")
+
+    max_retained = min(
+        experiment.result.samples.shape[0] - experiment.burn_in
+        for experiment in experiments
+    )
+    if max_retained < 3:
+        raise ValueError("Each experiment must have at least three retained states.")
+    if checkpoints is None:
+        first = min(50, max_retained)
+        checkpoints_array = np.unique(
+            np.geomspace(first, max_retained, num=11).astype(int)
+        )
+    else:
+        checkpoints_array = np.unique(np.asarray(checkpoints, dtype=int))
+        if (
+            checkpoints_array.ndim != 1
+            or checkpoints_array.size == 0
+            or checkpoints_array[0] < 2
+            or checkpoints_array[-1] > max_retained
+        ):
+            raise ValueError(
+                f"checkpoints must lie between 2 and {max_retained} retained states."
+            )
+
+    reference = get_reference_sample(target_key)
+    score_rows = []
+    for experiment in experiments:
+        retained = experiment.result.samples[experiment.burn_in :]
+        score_rows.append(
+            [
+                standardized_sliced_wasserstein(
+                    retained[: int(checkpoint)], reference
+                )
+                for checkpoint in checkpoints_array
+            ]
+        )
+    scores = np.asarray(score_rows, dtype=float)
+    finite_columns = np.all(np.isfinite(scores), axis=0)
+    means = np.full(checkpoints_array.shape, np.inf, dtype=float)
+    standard_deviations = np.full(checkpoints_array.shape, np.inf, dtype=float)
+    worst = np.full(checkpoints_array.shape, np.inf, dtype=float)
+    means[finite_columns] = np.mean(scores[:, finite_columns], axis=0)
+    if scores.shape[0] > 1:
+        standard_deviations[finite_columns] = np.std(
+            scores[:, finite_columns], axis=0, ddof=1
+        )
+    else:
+        standard_deviations[finite_columns] = 0.0
+    worst[finite_columns] = np.max(scores[:, finite_columns], axis=0)
+    return {
+        "retained": checkpoints_array,
+        "mean_swd": means,
+        "sd_swd": standard_deviations,
+        "worst_swd": worst,
+        "all_swd": scores,
+    }

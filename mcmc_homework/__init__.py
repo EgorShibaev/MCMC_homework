@@ -5,10 +5,15 @@ from .experiments import (
     CORE_TARGET_KEYS,
     DEFAULT_SETTINGS,
     METHODS,
+    SWD_PASS_THRESHOLDS,
+    BenchmarkResult,
     Experiment,
+    benchmark_all_settings,
+    benchmark_passed,
     benchmark_setting,
     run_experiment,
     summarize_experiments,
+    swd_convergence,
 )
 from .metrics import (
     autocorrelation_1d,
@@ -36,10 +41,12 @@ from .targets import (
 )
 from .validation import finite_difference_gradient, gradient_check_report
 from .visualization import (
+    benchmark_results_html,
     metrics_html,
     plot_chain_panel,
     plot_mode_ratio_comparison,
     plot_sampling_run,
+    plot_swd_convergence,
 )
 from .widgets import SamplingLab, build_sampling_lab
 
@@ -48,8 +55,10 @@ __all__ = [
     "CORE_TARGET_KEYS",
     "DEFAULT_SETTINGS",
     "METHODS",
+    "SWD_PASS_THRESHOLDS",
     "TARGETS",
     "BananaTarget",
+    "BenchmarkResult",
     "Experiment",
     "ImbalancedGaussianMixture",
     "SamplerResult",
@@ -58,6 +67,9 @@ __all__ = [
     "TiltedGaussian",
     "UnequalGaussianMixture",
     "autocorrelation_1d",
+    "benchmark_all_settings",
+    "benchmark_passed",
+    "benchmark_results_html",
     "benchmark_setting",
     "build_sampling_lab",
     "compute_metrics",
@@ -71,11 +83,13 @@ __all__ = [
     "plot_chain_panel",
     "plot_mode_ratio_comparison",
     "plot_sampling_run",
+    "plot_swd_convergence",
     "random_walk_metropolis",
     "reference_noise_floor",
     "run_experiment",
     "run_sampler",
     "standardized_sliced_wasserstein",
     "summarize_experiments",
+    "swd_convergence",
     "unadjusted_langevin",
 ]

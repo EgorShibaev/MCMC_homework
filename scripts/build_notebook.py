@@ -106,6 +106,18 @@ def build_notebook() -> nbf.NotebookNode:
 
             The primary error is standardized sliced Wasserstein-1 distance (SWD) to an exact iid reference sample. **Lower is better.** Report mean, standard deviation, and worst-seed SWD over fixed seeds. Secondary diagnostics are minimum ESS, ESS per 1,000 target evaluations, acceptance, and target-specific quantities such as mode mass and switches.
 
+            ### Explicit pass criterion
+
+            A target–method row passes only when **the worst SWD over seeds `(11, 23, 47)` is at or below the target threshold** and no run diverges:
+
+            | target | required worst-seed SWD |
+            |---|---:|
+            | tilted Gaussian | $\leq 0.50$ |
+            | banana | $\leq 0.50$ |
+            | 65:35 mixture | $\leq 0.75$ |
+
+            To pass the homework, all **12** core target–method rows must say **PASS** at the fixed budget of 4,000 recorded chain states and 25% burn-in. The thresholds differ by target difficulty, but within a target every method faces the same requirement. The convergence figure later in the notebook plots this exact worst-seed metric against retained iterations.
+
             Burn-in removes an initial transient. It cannot fix discretization bias, mode trapping, or a poorly tuned integrator.
             """,
             "theory",
@@ -124,13 +136,16 @@ def build_notebook() -> nbf.NotebookNode:
                 CORE_TARGET_KEYS,
                 DEFAULT_SETTINGS,
                 METHODS,
+                SWD_PASS_THRESHOLDS,
                 TARGETS,
-                benchmark_setting,
+                benchmark_all_settings,
+                benchmark_results_html,
                 build_sampling_lab,
                 gradient_check_report,
                 metrics_html,
                 plot_mode_ratio_comparison,
                 plot_sampling_run,
+                plot_swd_convergence,
                 run_experiment,
             )
 
@@ -250,7 +265,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             Replace every value below. RWMH uses `scale = sigma`; ULA/MALA use `scale = eta`; HMC uses `scale = epsilon` plus `n_leapfrog = L`. The supplied values are starting guesses, not optimized answers.
 
-            Final comparisons use 4,000 states, 25% burn-in, and seeds `(11, 23, 47)`.
+            Final comparisons use 4,000 states, 25% burn-in, and seeds `(11, 23, 47)`. You may change hyperparameters, but do not change this grading budget, burn-in, seeds, or thresholds. The table gives each row a direct **PASS / TUNE MORE** status. The plot then shows whether the worst-seed SWD approaches and crosses the dashed requirement as retained iterations accumulate. Curves need not decrease monotonically.
             """,
             "assignment",
         )
@@ -272,72 +287,15 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         code(
             """
-            def benchmark_all(settings, n_steps=4000, burn_fraction=0.25, seeds=BENCHMARK_SEEDS):
-                rows = []
-                for target_key in CORE_TARGET_KEYS:
-                    for method in METHODS:
-                        setting = settings[(target_key, method)]
-                        scale = float(setting["scale"])
-                        leapfrog = int(setting.get("n_leapfrog", 10))
-                        experiments, summary = benchmark_setting(
-                            target_key, method, scale, seeds,
-                            n_steps=n_steps, burn_fraction=burn_fraction,
-                            n_leapfrog=leapfrog,
-                        )
-                        acceptances = [
-                            exp.metrics["acceptance_rate"]
-                            for exp in experiments
-                            if exp.metrics["acceptance_rate"] is not None
-                        ]
-                        rows.append({
-                            "target": target_key,
-                            "method": method,
-                            "scale": scale,
-                            "L": leapfrog if method == "HMC" else None,
-                            "mean_swd": summary["mean_swd"],
-                            "sd_swd": summary["sd_swd"],
-                            "worst_swd": summary["worst_swd"],
-                            "ess_per_1000": summary["mean_ess_per_1000"],
-                            "acceptance": float(np.mean(acceptances)) if acceptances else None,
-                            "divergent_runs": int(summary["divergent_runs"]),
-                        })
-                return rows
-
-
-            def benchmark_table(rows):
-                rendered = []
-                for row in rows:
-                    acceptance = "N/A" if row["acceptance"] is None else f"{100*row['acceptance']:.1f}%"
-                    leapfrog = "—" if row["L"] is None else str(row["L"])
-                    rendered.append(
-                        "<tr>"
-                        f"<td>{row['target']}</td><td>{row['method']}</td>"
-                        f"<td>{row['scale']:.4g}</td><td>{leapfrog}</td>"
-                        f"<td><b>{row['mean_swd']:.3f} ± {row['sd_swd']:.3f}</b></td>"
-                        f"<td>{row['worst_swd']:.3f}</td><td>{row['ess_per_1000']:.1f}</td>"
-                        f"<td>{acceptance}</td><td>{row['divergent_runs']}</td></tr>"
-                    )
-                header = (
-                    "<tr><th>target</th><th>method</th><th>scale</th><th>L</th>"
-                    "<th>mean ± SD SWD</th><th>worst SWD</th><th>ESS/1k</th>"
-                    "<th>accept</th><th>diverged</th></tr>"
-                )
-                return HTML("<table>" + header + "".join(rendered) + "</table>")
-            """,
-            "benchmark",
-            hidden=True,
-        )
-    )
-    cells.append(
-        code(
-            """
-            RUN_FULL_BENCHMARK = False  # set True after tuning every setting
+            RUN_FULL_BENCHMARK = True  # set False only while doing quick exploration
 
             if RUN_FULL_BENCHMARK:
-                benchmark_rows = benchmark_all(student_settings)
-                display(benchmark_table(benchmark_rows))
+                benchmark_results = benchmark_all_settings(student_settings)
+                display(HTML(benchmark_results_html(benchmark_results)))
+                plot_swd_convergence(benchmark_results)
+                plt.show()
             else:
-                print("Tune all 12 settings, then set RUN_FULL_BENCHMARK = True.")
+                print("Set RUN_FULL_BENCHMARK = True to see the official PASS / TUNE MORE result.")
             """,
             "student-edit",
         )
@@ -396,7 +354,8 @@ def build_notebook() -> nbf.NotebookNode:
             1. Increase the chain length at fixed scale. Contrast exact MH-corrected methods with finite-step ULA.
             2. Halve ULA's step and increase transitions. Explain the bias–mixing–cost trade-off.
             3. Rank the four methods for each core target using mean/worst SWD first and efficiency diagnostics second.
-            4. Explain why a low SWD from one lucky mixture trajectory is insufficient evidence.
+            4. Use the SWD convergence figure: identify when each curve first crosses its threshold and whether it remains below it. Explain any non-monotonicity.
+            5. Explain why a low SWD from one lucky mixture trajectory is insufficient evidence.
 
             **Your answer:** _replace this text._
             """,
@@ -409,8 +368,10 @@ def build_notebook() -> nbf.NotebookNode:
             ## Submission checklist
 
             - [ ] I inspected the separate implementation modules.
-            - [ ] I replaced all 12 core settings and ran the fixed benchmark.
+            - [ ] I replaced all 12 core settings and ran the unchanged fixed benchmark.
+            - [ ] Every row in the benchmark table says **PASS** (12/12).
             - [ ] I reported mean $\pm$ SD and worst-seed SWD.
+            - [ ] I interpreted the SWD-over-retained-iterations figure.
             - [ ] I interpreted acceptance, ESS/target-evaluation cost, and task diagnostics.
             - [ ] I completed the 10:90 rare-mode case-study questions.
             - [ ] I answered Tasks A–D and restarted the kernel before submission.
