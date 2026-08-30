@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcmc-homework"
+version = "0.1.0"
+description = "Interactive homework on Langevin, Metropolis, MALA, and Hamiltonian Monte Carlo sampling"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "ipywidgets>=8.1",
+    "ipykernel>=6.29",
+]
+
+[project.optional-dependencies]
+dev = [
+    "jupyterlab>=4.2",
+    "nbformat>=5.10",
+    "nbclient>=0.10",
+    "nbconvert>=7.16",
+]
+
+[tool.setuptools.packages.find]
+include = ["mcmc_homework*"]
