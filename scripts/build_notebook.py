@@ -197,7 +197,15 @@ def build_notebook() -> nbf.NotebookNode:
             """
             import numpy as np
             import matplotlib.pyplot as plt
+            import sys
             from IPython.display import HTML, display
+
+            # The homework package may have changed while this notebook kernel
+            # remained open. Remove cached local modules before importing the
+            # current project API so rerunning this cell is sufficient.
+            for module_name in tuple(sys.modules):
+                if module_name == "mcmc_homework" or module_name.startswith("mcmc_homework."):
+                    del sys.modules[module_name]
 
             from mcmc_homework import (
                 BENCHMARK_SEEDS,
