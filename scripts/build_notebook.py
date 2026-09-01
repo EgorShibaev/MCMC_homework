@@ -156,6 +156,31 @@ def build_notebook() -> nbf.NotebookNode:
 
             To pass the homework, all **12** core target–method rows must say **PASS** at the fixed budget of 4,000 recorded chain states and 25% burn-in. The thresholds differ by target difficulty, but within a target every method faces the same requirement. The convergence figure later in the notebook plots this exact worst-seed metric against retained iterations.
 
+            ### What students tune for the submitted benchmark
+
+            Tune a separate setting for every target–method row:
+
+            | method | quantities students tune | meaning |
+            |---|---|---|
+            | RWMH | proposal scale $\sigma$ | standard deviation of the Gaussian random-walk proposal |
+            | ULA | step size $\eta$ | strength of both the gradient drift and Langevin noise step |
+            | MALA | step size $\eta$ | scale of the Langevin proposal before MH correction |
+            | HMC | integrator step $\epsilon$ and leapfrog count $L$ | numerical step size and trajectory length/cost |
+
+            This produces 12 submitted configurations: four methods for each of three core targets. The HMC configurations contain two tuned numbers; every other configuration contains one.
+
+            **Do not tune the official evaluation budget.** Every submitted configuration is evaluated using:
+
+            - `iterations` / `n_steps = 4000` recorded chain states;
+            - `burn-in = 25%` (3,000 retained states);
+            - exactly **three independent chains**, with seeds `(11, 23, 47)`;
+            - the target's supplied initial state;
+            - the published SWD thresholds above.
+
+            Therefore, the official benchmark runs $12\times3=36$ chains in total. Students may not change the number of chains in the submission.
+
+            The interactive controls for iterations, burn-in, repeats, and base seed are available only for exploration and diagnosis. They must not be used to make the final benchmark easier. In particular, increasing iterations is not a submitted hyperparameter.
+
             Burn-in removes an initial transient. It cannot fix discretization bias, mode trapping, or a poorly tuned integrator.
             """,
             "theory",
@@ -309,7 +334,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             Replace every value below. RWMH uses `scale = sigma`; ULA/MALA use `scale = eta`; HMC uses `scale = epsilon` plus `n_leapfrog = L`. The supplied values are starting guesses, not optimized answers.
 
-            Final comparisons use 4,000 states, 25% burn-in, and seeds `(11, 23, 47)`. You may change hyperparameters, but do not change this grading budget, burn-in, seeds, or thresholds. The table gives each row a direct **PASS / TUNE MORE** status. The plot then shows whether the worst-seed SWD approaches and crosses the dashed requirement as retained iterations accumulate. Curves need not decrease monotonically.
+            **Edit only `scale` and, for HMC, `n_leapfrog` inside `student_settings`.** Choose them separately for all three targets. Do not change the official 4,000-state budget, 25% burn-in, three seeds `(11, 23, 47)`, initial states, or SWD thresholds. The table gives each row a direct **PASS / TUNE MORE** status. The plot then shows whether the worst-seed SWD approaches and crosses the dashed requirement as retained iterations accumulate. Curves need not decrease monotonically.
             """,
             "assignment",
         )
@@ -334,7 +359,13 @@ def build_notebook() -> nbf.NotebookNode:
             RUN_FULL_BENCHMARK = True  # set False only while doing quick exploration
 
             if RUN_FULL_BENCHMARK:
-                benchmark_results = benchmark_all_settings(student_settings)
+                # Official submission evaluation: do not change these arguments.
+                benchmark_results = benchmark_all_settings(
+                    student_settings,
+                    n_steps=4000,
+                    burn_fraction=0.25,
+                    seeds=(11, 23, 47),
+                )
                 display(HTML(benchmark_results_html(benchmark_results)))
                 plot_swd_convergence(benchmark_results)
                 plt.show()

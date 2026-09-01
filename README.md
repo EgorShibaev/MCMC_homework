@@ -37,6 +37,12 @@ the banana, or 0.75 for the 65:35 mixture, with no divergent run. All 12 core
 rows must pass. The notebook table reports `PASS` or `TUNE MORE`, and an
 adjacent plot tracks the same worst-seed SWD as retained iterations accumulate.
 
+Students tune a separate proposal scale `sigma` for each RWMH row, step size
+`eta` for each ULA and MALA row, and HMC step size `epsilon` plus leapfrog count
+`L` for each HMC row. Iterations, burn-in, number of chains, benchmark seeds,
+initial states, and pass thresholds are fixed for submission; the corresponding
+interactive controls are for exploration only.
+
 ## Setup
 
 ```bash
