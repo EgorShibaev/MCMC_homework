@@ -14,6 +14,7 @@ from .experiments import (
     METHODS,
     SWD_PASS_THRESHOLDS,
     BenchmarkResult,
+    EnsembleExperiment,
     Experiment,
     swd_convergence,
 )
@@ -187,6 +188,142 @@ def plot_sampling_run(
     return figure
 
 
+def plot_ensemble_sampling_run(
+    ensemble: EnsembleExperiment,
+    figure: Figure | None = None,
+) -> Figure:
+    """Show all chains and the combined fixed-budget ensemble diagnostics."""
+
+    target = TARGETS[ensemble.target_key]
+    figure = plt.figure(figsize=(12.0, 8.2)) if figure is None else figure
+    figure.clear()
+    ax_path, ax_trace, ax_swd, ax_acf = figure.subplots(2, 2).ravel()
+    colors = plt.get_cmap("tab10")
+
+    _density_contours(ax_path, target, grid_size=120)
+    for index, chain_experiment in enumerate(ensemble.chains):
+        chain = _finite_prefix(chain_experiment.result.samples)
+        burn_end = min(chain_experiment.burn_in, len(chain))
+        color = colors(index % 10)
+        if burn_end > 1:
+            stride = max(1, burn_end // 120)
+            ax_path.plot(
+                chain[:burn_end:stride, 0],
+                chain[:burn_end:stride, 1],
+                color=color,
+                linewidth=0.65,
+                alpha=0.35,
+            )
+        retained = chain[burn_end:]
+        if len(retained):
+            stride = max(1, len(retained) // max(80, 700 // ensemble.n_chains))
+            ax_path.scatter(
+                retained[::stride, 0],
+                retained[::stride, 1],
+                s=7,
+                alpha=0.25,
+                color=color,
+                edgecolors="none",
+                label=f"chain {index + 1}",
+            )
+        ax_trace.plot(
+            np.arange(len(chain)),
+            chain[:, 0],
+            color=color,
+            linewidth=0.65,
+            alpha=0.8,
+            label=f"chain {index + 1}",
+        )
+    ax_path.set(
+        xlim=target.bounds[0],
+        ylim=target.bounds[1],
+        xlabel="x₁",
+        ylabel="x₂",
+        title="All chain paths and retained states",
+    )
+    ax_path.legend(loc="best", fontsize=7, ncols=2)
+    representative_burn = ensemble.chains[0].burn_in
+    ax_trace.axvline(
+        representative_burn,
+        color="black",
+        linestyle="--",
+        linewidth=1.0,
+        label="burn-in",
+    )
+    ax_trace.set(
+        xlabel="state index within each chain",
+        ylabel="x₁",
+        title="Per-chain traces (chain boundaries are not joined)",
+    )
+    ax_trace.legend(loc="best", fontsize=7, ncols=2)
+
+    curve = swd_convergence([ensemble])
+    finite = np.isfinite(curve["mean_swd"])
+    ax_swd.plot(
+        curve["target_evals"][finite],
+        curve["mean_swd"][finite],
+        marker="o",
+        markersize=3.0,
+        color="#2468b4",
+        label="combined-chain SWD",
+    )
+    threshold = SWD_PASS_THRESHOLDS.get(ensemble.target_key)
+    if threshold is not None:
+        ax_swd.axhline(
+            threshold,
+            color="black",
+            linestyle="--",
+            linewidth=1.1,
+            label=f"official target = {threshold:.2f}",
+        )
+    ax_swd.set(
+        xlabel="cumulative target-evaluation budget",
+        ylabel="SWD (lower is better)",
+        title="Combined accuracy as the budget is spent",
+    )
+    ax_swd.legend(loc="best", fontsize=8)
+
+    retained_chains = [
+        chain.result.samples[chain.burn_in :] for chain in ensemble.chains
+    ]
+    max_lag = min(60, *(len(retained) - 1 for retained in retained_chains))
+    if max_lag >= 1 and all(np.all(np.isfinite(x)) for x in retained_chains):
+        first_features, labels = target.diagnostic_features(retained_chains[0])
+        del first_features
+        for feature_index, label in enumerate(labels):
+            chain_acf = []
+            for retained in retained_chains:
+                features, _ = target.diagnostic_features(retained)
+                chain_acf.append(
+                    autocorrelation_1d(features[:, feature_index], max_lag=max_lag)
+                )
+            ax_acf.plot(
+                np.arange(max_lag + 1),
+                np.mean(chain_acf, axis=0),
+                linewidth=1.3,
+                label=label,
+            )
+        ax_acf.axhline(0.0, color="black", linewidth=0.8)
+        ax_acf.legend(loc="upper right", fontsize=8)
+    ax_acf.set(
+        xlabel="lag within a chain",
+        ylabel="mean autocorrelation",
+        title="Within-chain autocorrelation (averaged across chains)",
+    )
+
+    score = ensemble.metrics["swd"]
+    score_text = "∞" if not np.isfinite(score) else f"{score:.3f}"
+    integrator = f", L={ensemble.n_leapfrog}" if ensemble.method == "HMC" else ""
+    figure.suptitle(
+        f"{target.name} — {ensemble.method} | scale={ensemble.scale:.4g}{integrator}, "
+        f"C={ensemble.n_chains}, burn={100.0 * ensemble.burn_fraction:.0f}%, "
+        f"budget={ensemble.target_eval_budget:,}, SWD={score_text}",
+        fontsize=12,
+    )
+    figure.tight_layout(rect=(0, 0, 1, 0.95))
+    return figure
+
+
 def plot_mode_ratio_comparison(
     langevin_experiment: Experiment,
     hmc_experiment: Experiment,
@@ -271,7 +408,7 @@ def plot_swd_convergence(results: Sequence[BenchmarkResult]) -> Figure:
             values = curve["worst_swd"]
             finite = np.isfinite(values)
             axis.plot(
-                curve["retained"][finite],
+                curve["target_evals"][finite],
                 values[finite],
                 marker="o",
                 markersize=3.0,
@@ -288,15 +425,14 @@ def plot_swd_convergence(results: Sequence[BenchmarkResult]) -> Figure:
             label=f"pass threshold = {threshold:.2f}",
         )
         axis.set(
-            xscale="log",
-            xlabel="retained iterations",
-            ylabel="worst-seed SWD (lower is better)",
+            xlabel="cumulative target-evaluation budget",
+            ylabel="worst-repeat SWD (lower is better)",
             title=TARGETS[target_key].name,
         )
         axis.set_ylim(bottom=0.0)
         axis.legend(fontsize=8)
     figure.suptitle(
-        "Does each method reach the fixed-budget SWD requirement?",
+        "Accuracy as the shared target-evaluation budget is spent",
         fontsize=13,
     )
     figure.tight_layout(rect=(0, 0, 1, 0.93))
@@ -315,7 +451,7 @@ def _format_number(value: Any, digits: int = 3) -> str:
 
 
 def metrics_html(
-    experiment: Experiment,
+    experiment: Experiment | EnsembleExperiment,
     summary: Mapping[str, float] | None = None,
 ) -> str:
     """Return a compact metric table suitable for notebook display."""
@@ -325,13 +461,18 @@ def metrics_html(
     threshold_text = (
         f"≤ {threshold:.3f}" if threshold is not None else "N/A — guided case study"
     )
+    swd_label = (
+        "Combined retained chains: SWD (lower is better)"
+        if isinstance(experiment, EnsembleExperiment)
+        else "Single plotted chain: SWD (lower is better)"
+    )
     rows: list[tuple[str, str]] = [
         (
-            "Single plotted chain: SWD (lower is better)",
+            swd_label,
             _format_number(metrics["swd"]),
         ),
         (
-            "Official worst-seed SWD target (seeds 11, 23, 47)",
+            "Official worst-repeat SWD target (base seeds 11, 23, 47)",
             threshold_text,
         ),
         (
@@ -353,6 +494,28 @@ def metrics_html(
             else f"{100.0 * metrics['acceptance_rate']:.1f}%",
         ),
     ]
+    if isinstance(experiment, EnsembleExperiment):
+        states = metrics["states_by_chain"]
+        retained = metrics["retained_by_chain"]
+        state_text = (
+            str(states[0])
+            if len(set(states)) == 1
+            else f"{min(states)}–{max(states)}"
+        )
+        retained_text = (
+            str(retained[0])
+            if len(set(retained)) == 1
+            else f"{min(retained)}–{max(retained)}"
+        )
+        rows[2:2] = [
+            ("Student-selected chains", str(experiment.n_chains)),
+            ("Student-selected burn-in", f"{100.0 * experiment.burn_fraction:.0f}% per chain"),
+            ("Fixed total target-evaluation budget", f"{experiment.target_eval_budget:,}"),
+            ("Actual target evaluations used", f"{metrics['target_evals']:,}"),
+            ("Recorded states per chain", state_text),
+            ("Retained states per chain", retained_text),
+            ("Combined retained states", f"{metrics['retained']:,}"),
+        ]
     for label, value in metrics["task"].items():
         rows.append((label, _format_number(value)))
     if summary is not None:
@@ -379,6 +542,8 @@ def metrics_html(
 def benchmark_results_html(results: Sequence[BenchmarkResult]) -> str:
     """Render the fixed-budget pass rule and all target-method statuses."""
 
+    if not results:
+        raise ValueError("At least one benchmark result is required.")
     rendered_rows = []
     passed_count = sum(result.passed for result in results)
     for result in results:
@@ -391,6 +556,9 @@ def benchmark_results_html(results: Sequence[BenchmarkResult]) -> str:
         setting_text = f"{parameter}={result.scale:.4g}"
         if result.n_leapfrog is not None:
             setting_text = f"ε={result.scale:.4g}, L={result.n_leapfrog}"
+        setting_text += (
+            f"; C={result.n_chains}, burn={100.0 * result.burn_fraction:.0f}%"
+        )
         status = "PASS" if result.passed else "TUNE MORE"
         status_color = "#18864b" if result.passed else "#b33a3a"
         rendered_rows.append(
@@ -418,8 +586,9 @@ def benchmark_results_html(results: Sequence[BenchmarkResult]) -> str:
     )
     return (
         "<div style='margin:0.4em 0 0.8em 0'>"
-        "<b>Pass rule:</b> worst-seed SWD must meet the target threshold and "
-        "all three runs must remain finite.<br>"
+        "<b>Pass rule:</b> worst-repeat SWD must meet the target threshold and "
+        "all three benchmark ensembles must remain finite. Every ensemble receives "
+        f"the same {results[0].target_eval_budget:,}-evaluation budget.<br>"
         f"<b>Homework status:</b> {escape(overall_status)}"
         "</div><table>"
         f"{header}{''.join(rendered_rows)}</table>"

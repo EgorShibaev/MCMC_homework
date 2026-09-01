@@ -10,14 +10,15 @@ from mcmc_homework import (
     CORE_TARGET_KEYS,
     DEFAULT_SETTINGS,
     TARGETS,
-    BenchmarkResult,
+    benchmark_all_settings,
     gradient_check_report,
     plot_chain_panel,
+    plot_ensemble_sampling_run,
     plot_mode_ratio_comparison,
     plot_sampling_run,
     plot_swd_convergence,
     run_experiment,
-    summarize_experiments,
+    run_ensemble_experiment,
 )
 from mcmc_homework.experiments import METHODS
 
@@ -64,44 +65,9 @@ def main() -> None:
     figure.savefig(output_dir / "sampler_comparison.png", dpi=150, bbox_inches="tight")
     plt.close(figure)
 
-    benchmark_preview = [
-        BenchmarkResult(
-            target_key=target_key,
-            method=method,
-            scale=next(
-                experiment.result.scale
-                for experiment in experiments
-                if experiment.target_key == target_key
-                and experiment.result.method == method
-            ),
-            n_leapfrog=(
-                next(
-                    experiment.result.n_leapfrog
-                    for experiment in experiments
-                    if experiment.target_key == target_key
-                    and experiment.result.method == method
-                )
-                if method == "HMC"
-                else None
-            ),
-            experiments=[
-                experiment
-                for experiment in experiments
-                if experiment.target_key == target_key
-                and experiment.result.method == method
-            ],
-            summary=summarize_experiments(
-                [
-                    experiment
-                    for experiment in experiments
-                    if experiment.target_key == target_key
-                    and experiment.result.method == method
-                ]
-            ),
-        )
-        for target_key in CORE_TARGET_KEYS
-        for method in METHODS
-    ]
+    benchmark_preview = benchmark_all_settings(
+        DEFAULT_SETTINGS, target_eval_budget=12_000, seeds=(11,)
+    )
     convergence = plot_swd_convergence(benchmark_preview)
     convergence.savefig(
         output_dir / "swd_convergence.png", dpi=150, bbox_inches="tight"
@@ -116,6 +82,21 @@ def main() -> None:
     dashboard = plot_sampling_run(showcase)
     dashboard.savefig(output_dir / "hmc_dashboard.png", dpi=150, bbox_inches="tight")
     plt.close(dashboard)
+
+    ensemble = run_ensemble_experiment(
+        "mixture",
+        "RWMH",
+        2.5,
+        target_eval_budget=12_000,
+        n_chains=3,
+        burn_fraction=0.20,
+        base_seed=11,
+    )
+    ensemble_dashboard = plot_ensemble_sampling_run(ensemble)
+    ensemble_dashboard.savefig(
+        output_dir / "ensemble_dashboard.png", dpi=150, bbox_inches="tight"
+    )
+    plt.close(ensemble_dashboard)
 
     ula = run_experiment(
         "imbalanced_mixture", "ULA", 0.002, 6000, 0.20, 47

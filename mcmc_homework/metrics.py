@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import lru_cache
 from typing import Any
 
@@ -179,4 +180,91 @@ def compute_metrics(
         "retained": int(retained.shape[0]),
         "diverged": False,
         "task": target.task_diagnostics(retained),
+    }
+
+
+def compute_ensemble_metrics(
+    target: Target2D,
+    results: Sequence[SamplerResult],
+    burn_ins: Sequence[int],
+    reference: Array | None = None,
+) -> dict[str, Any]:
+    """Score independent chains as one fixed-budget sampling ensemble.
+
+    Accuracy and target diagnostics use the concatenated retained draws. ESS is
+    computed within each chain and then summed, because concatenating chains
+    would create artificial transitions at their boundaries.
+    """
+
+    if not results or len(results) != len(burn_ins):
+        raise ValueError("results and burn_ins must have the same nonzero length.")
+    retained_chains: list[Array] = []
+    for result, burn_in in zip(results, burn_ins):
+        if burn_in < 0 or burn_in >= result.samples.shape[0] - 2:
+            raise ValueError("Every burn_in must leave at least three retained states.")
+        retained_chains.append(result.samples[int(burn_in) :])
+
+    reference = (
+        get_reference_sample(target.key) if reference is None else np.asarray(reference)
+    )
+    total_target_evals = int(sum(result.target_evals for result in results))
+    total_retained = int(sum(len(retained) for retained in retained_chains))
+    valid = all(
+        not result.diverged and np.all(np.isfinite(retained))
+        for result, retained in zip(results, retained_chains)
+    )
+    acceptance_arrays = [
+        result.accepted for result in results if result.accepted is not None
+    ]
+    acceptance_rate = (
+        float(np.mean(np.concatenate(acceptance_arrays)))
+        if acceptance_arrays
+        else None
+    )
+    common = {
+        "noise_floor": reference_noise_floor(target.key),
+        "acceptance_rate": acceptance_rate,
+        "target_evals": total_target_evals,
+        "retained": total_retained,
+        "n_chains": len(results),
+        "states_by_chain": [int(result.samples.shape[0]) for result in results],
+        "retained_by_chain": [int(len(retained)) for retained in retained_chains],
+    }
+    if not valid:
+        return {
+            "swd": float("inf"),
+            "ess_min": 0.0,
+            "ess_per_1000_evals": 0.0,
+            "ess_by_feature": {},
+            "diverged": True,
+            "task": {},
+            **common,
+        }
+
+    combined = np.concatenate(retained_chains, axis=0)
+    swd = standardized_sliced_wasserstein(combined, reference)
+    feature_ess: dict[str, float] = {}
+    for retained in retained_chains:
+        features, labels = target.diagnostic_features(retained)
+        for index, label in enumerate(labels):
+            feature_ess[label] = feature_ess.get(label, 0.0) + effective_sample_size_1d(
+                features[:, index]
+            )
+    ess_min = float(min(feature_ess.values())) if feature_ess else 0.0
+    task = target.task_diagnostics(combined)
+    if "mode switches" in task:
+        task["mode switches"] = float(
+            sum(
+                target.task_diagnostics(retained).get("mode switches", 0.0)
+                for retained in retained_chains
+            )
+        )
+    return {
+        "swd": swd,
+        "ess_min": ess_min,
+        "ess_per_1000_evals": 1000.0 * ess_min / max(1, total_target_evals),
+        "ess_by_feature": feature_ess,
+        "diverged": False,
+        "task": task,
+        **common,
     }

@@ -13,14 +13,15 @@ sampling failures; it does not hide deliberate implementation bugs.
 - `MCMC_Homework.ipynb` — interactive student assignment.
 - `mcmc_homework/targets.py` — four two-dimensional target distributions and
   exact iid reference samplers.
-- `mcmc_homework/samplers.py` — RWMH, ULA, MALA, and identity-mass HMC with
-  leapfrog integration.
+- `mcmc_homework/samplers.py` — RWMH, ULA, MALA, identity-mass HMC, and exact
+  target-evaluation accounting for a shared work budget.
 - `mcmc_homework/metrics.py` — standardized sliced-Wasserstein error, ESS, and
   target-specific diagnostics.
 - `mcmc_homework/visualization.py` — trajectory, trace, autocorrelation, and
   mode-proportion plots, plus the fixed-budget SWD convergence figure.
-- `mcmc_homework/experiments.py` — reproducible runs and repeated-seed
-  benchmarks, target-specific pass thresholds, and convergence calculations.
+- `mcmc_homework/experiments.py` — fixed-budget multi-chain ensembles,
+  repeated-seed benchmarks, target-specific pass thresholds, and convergence
+  calculations.
 - `mcmc_homework/widgets.py` — sliders and button-driven notebook interface.
 - `tests/` — numerical correctness and regression tests.
 
@@ -30,18 +31,24 @@ crosses the barrier and approaches the correct mode proportions.
 
 ## Homework pass rule
 
-The official benchmark uses 4,000 recorded chain states, 25% burn-in, and seeds
-`(11, 23, 47)`. A target-method row passes when its **worst-seed standardized
-sliced-Wasserstein distance** is at most 0.50 for the tilted Gaussian, 0.50 for
-the banana, or 0.75 for the 65:35 mixture, with no divergent run. All 12 core
-rows must pass. The notebook table reports `PASS` or `TUNE MORE`, and an
-adjacent plot tracks the same worst-seed SWD as retained iterations accumulate.
+Every benchmark ensemble receives 40,000 target-evaluation work units, including
+burn-in and shared across all selected chains. One log-density or gradient call
+counts as one unit. Students tune a separate proposal scale `sigma` for RWMH,
+step size `eta` for ULA and MALA, and HMC step size `epsilon` plus leapfrog count
+`L`. Every row also tunes burn-in and a chain count from 1 through 8.
 
-Students tune a separate proposal scale `sigma` for each RWMH row, step size
-`eta` for each ULA and MALA row, and HMC step size `epsilon` plus leapfrog count
-`L` for each HMC row. Iterations, burn-in, number of chains, benchmark seeds,
-initial states, and pass thresholds are fixed for submission; the corresponding
-interactive controls are for exploration only.
+The entire selected multi-chain ensemble is repeated with base seeds
+`(11, 23, 47)`. A row passes when its **worst-repeat standardized
+sliced-Wasserstein distance** is at most 0.08 for the tilted Gaussian, 0.13 for
+the banana, or 0.38 for the 65:35 mixture, with no divergent ensemble. All 12
+core rows must pass. The notebook table reports `PASS` or `TUNE MORE`, and the
+adjacent plot tracks worst-repeat SWD against the cumulative target-evaluation
+budget.
+
+The total work budget, benchmark base seeds, initial states, accounting rule,
+and pass thresholds are fixed. Choosing more chains makes each chain shorter;
+increasing burn-in leaves fewer scored states; increasing HMC's `L` reduces its
+number of transitions. These allocation trade-offs are part of the assignment.
 
 ## Setup
 

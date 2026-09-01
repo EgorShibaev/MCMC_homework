@@ -35,6 +35,67 @@ class SamplerResult:
         return int(self.log_prob_evals + self.grad_evals)
 
 
+def target_evals_for_states(
+    method: str,
+    n_states: int,
+    n_leapfrog: int = 10,
+) -> int:
+    """Return the sampler's target-oracle cost for a finite chain.
+
+    One call to ``log_prob`` and one call to ``grad_log_prob`` each count as one
+    work unit. Input validation, diagnostic scoring, and reference sampling are
+    excluded. HMC's value is the maximum cost when every trajectory remains
+    finite; an invalid trajectory can stop early and use less work.
+    """
+
+    if int(n_states) != n_states or n_states < 2:
+        raise ValueError("n_states must be an integer of at least 2.")
+    normalized = method.strip().upper()
+    if normalized in {"RWM", "RWMH", "MH", "RANDOM-WALK METROPOLIS"}:
+        return int(n_states)
+    if normalized == "ULA":
+        return int(n_states - 1)
+    if normalized == "MALA":
+        return int(2 * n_states)
+    if normalized in {"HMC", "HAMILTONIAN MONTE CARLO"}:
+        if int(n_leapfrog) != n_leapfrog or n_leapfrog < 1:
+            raise ValueError("n_leapfrog must be a positive integer.")
+        return int(2 + (n_states - 1) * (int(n_leapfrog) + 1))
+    raise ValueError(f"Unknown method {method!r}; choose RWMH, ULA, MALA, or HMC.")
+
+
+def states_for_target_evals(
+    method: str,
+    target_eval_budget: int,
+    n_leapfrog: int = 10,
+) -> int:
+    """Return the longest chain whose sampler cost cannot exceed the budget."""
+
+    if int(target_eval_budget) != target_eval_budget or target_eval_budget < 2:
+        raise ValueError("target_eval_budget must be an integer of at least 2.")
+    normalized = method.strip().upper()
+    budget = int(target_eval_budget)
+    if normalized in {"RWM", "RWMH", "MH", "RANDOM-WALK METROPOLIS"}:
+        n_states = budget
+    elif normalized == "ULA":
+        n_states = budget + 1
+    elif normalized == "MALA":
+        n_states = budget // 2
+    elif normalized in {"HMC", "HAMILTONIAN MONTE CARLO"}:
+        if int(n_leapfrog) != n_leapfrog or n_leapfrog < 1:
+            raise ValueError("n_leapfrog must be a positive integer.")
+        n_states = 1 + (budget - 2) // (int(n_leapfrog) + 1)
+    else:
+        raise ValueError(
+            f"Unknown method {method!r}; choose RWMH, ULA, MALA, or HMC."
+        )
+    if n_states < 2:
+        raise ValueError(
+            "The target-evaluation budget is too small for this method setting."
+        )
+    return int(n_states)
+
+
 def _validate_sampler_inputs(
     target: Target2D, n_steps: int, scale: float, initial: Array | None
 ) -> Array:

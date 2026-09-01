@@ -146,40 +146,45 @@ def build_notebook() -> nbf.NotebookNode:
 
             ### Explicit pass criterion
 
-            A target–method row passes only when **the worst SWD over seeds `(11, 23, 47)` is at or below the target threshold** and no run diverges:
+            A target–method row passes only when **the worst SWD over benchmark ensembles with base seeds `(11, 23, 47)` is at or below the target threshold** and no ensemble diverges:
 
-            | target | required worst-seed SWD |
+            | target | required worst-repeat SWD |
             |---|---:|
-            | tilted Gaussian | $\leq 0.50$ |
-            | banana | $\leq 0.50$ |
-            | 65:35 mixture | $\leq 0.75$ |
+            | tilted Gaussian | $\leq 0.08$ |
+            | banana | $\leq 0.13$ |
+            | 65:35 mixture | $\leq 0.38$ |
 
-            To pass the homework, all **12** core target–method rows must say **PASS** at the fixed budget of 4,000 recorded chain states and 25% burn-in. The thresholds differ by target difficulty, but within a target every method faces the same requirement. The convergence figure later in the notebook plots this exact worst-seed metric against retained iterations.
+            To pass the homework, all **12** core target–method rows must say **PASS**. Every row receives the same total budget of **40,000 target evaluations per benchmark ensemble**, including burn-in and divided across all student-selected chains. One call to $\log\pi$ and one call to $\nabla\log\pi$ each count as one evaluation. Reference sampling, plotting, and metric calculations do not consume this sampling budget.
 
             ### What students tune for the submitted benchmark
 
             Tune a separate setting for every target–method row:
 
-            | method | quantities students tune | meaning |
+            | method | method-specific quantities | meaning |
             |---|---|---|
             | RWMH | proposal scale $\sigma$ | standard deviation of the Gaussian random-walk proposal |
             | ULA | step size $\eta$ | strength of both the gradient drift and Langevin noise step |
             | MALA | step size $\eta$ | scale of the Langevin proposal before MH correction |
             | HMC | integrator step $\epsilon$ and leapfrog count $L$ | numerical step size and trajectory length/cost |
 
-            This produces 12 submitted configurations: four methods for each of three core targets. The HMC configurations contain two tuned numbers; every other configuration contains one.
+            **Every row also tunes:** the number of independent chains $C\in\{1,\ldots,8\}$ and a burn-in fraction between 5% and 40%. This produces 12 submitted configurations: four methods for each of three core targets. RWMH, ULA, and MALA therefore have three tuned quantities per row; HMC has four.
 
-            **Do not tune the official evaluation budget.** Every submitted configuration is evaluated using:
+            ### The resource-allocation trade-off
 
-            - `iterations` / `n_steps = 4000` recorded chain states;
-            - `burn-in = 25%` (3,000 retained states);
-            - exactly **three independent chains**, with seeds `(11, 23, 47)`;
-            - the target's supplied initial state;
-            - the published SWD thresholds above.
+            The 40,000-evaluation budget is split as evenly as possible across the chosen $C$ chains. The sampler automatically runs the longest chains that fit their shares. Approximate work per transition is:
 
-            Therefore, the official benchmark runs $12\times3=36$ chains in total. Students may not change the number of chains in the submission.
+            | method | work per transition | approximate total transitions across all chains |
+            |---|---:|---:|
+            | RWMH | 1 density call | $40{,}000$ |
+            | ULA | 1 gradient call | $40{,}000$ |
+            | MALA | 1 density + 1 gradient call | $20{,}000$ |
+            | HMC | 1 density + $L$ gradient calls | $40{,}000/(L+1)$ |
 
-            The interactive controls for iterations, burn-in, repeats, and base seed are available only for exploration and diagnosis. They must not be used to make the final benchmark easier. In particular, increasing iterations is not a submitted hyperparameter.
+            Thus, more chains create more independent attempts to explore the target but make every chain shorter and repeat the warm-up cost. More burn-in may reduce initialization bias but leaves fewer retained samples. Increasing HMC's $L$ lengthens each trajectory but reduces the number of HMC transitions. These trade-offs are part of the homework.
+
+            The official evaluation repeats the **entire $C$-chain ensemble** three times using base seeds `(11, 23, 47)`. Within a repeat with base seed $s$, chain $j=0,\ldots,C-1$ uses seed $s+101j$. All chains start from the supplied target start. Retained draws are combined for SWD; ESS and mode switches are calculated within each chain before aggregation, so chain boundaries are never counted as transitions.
+
+            **Students may not change:** the 40,000-evaluation budget, the three benchmark base seeds, initial states, evaluation accounting, or SWD thresholds.
 
             Burn-in removes an initial transient. It cannot fix discretization bias, mode trapping, or a poorly tuned integrator.
             """,
@@ -196,6 +201,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             from mcmc_homework import (
                 BENCHMARK_SEEDS,
+                BENCHMARK_TARGET_EVAL_BUDGET,
                 CORE_TARGET_KEYS,
                 DEFAULT_SETTINGS,
                 METHODS,
@@ -266,15 +272,11 @@ def build_notebook() -> nbf.NotebookNode:
             r"""
             ## 4. Interactive tuning lab
 
-            Select a target and method, adjust the logarithmic scale slider, and press **Start sampling**. HMC adds a second slider for leapfrog count $L$.
+            The lab now mirrors one official benchmark ensemble. Select a target and method, tune its scale, choose burn-in and the number of chains $C$, and press **Start sampling**. HMC also exposes leapfrog count $L$. The total budget is always 40,000 target evaluations; changing $C$ or $L$ automatically changes the number of states produced by each chain.
 
-            **What `repeats` means:** one repeat is one independently randomized MCMC chain with the same target, method, hyperparameters, iteration count, and burn-in. Repeat $r=0,1,\ldots,R-1$ uses seed
+            The dashboard shows every chain path, per-chain traces, combined SWD as the budget is spent, and within-chain autocorrelation averaged across chains. The table scores all retained chains together. This lab uses base seed 11; the final benchmark repeats the same ensemble design with base seeds 11, 23, and 47.
 
-            $$\text{seed}_r=\text{base seed}+101r.$$
-
-            For example, `repeats = 5` and `base seed = 11` use seeds `11, 112, 213, 314, 415`. The diagnostic figure shows the **first** chain; the table reports mean $\pm$ SD SWD, worst SWD, and divergence count across **all** repeats. Repeats reveal whether a setting is reliable rather than successful only for one lucky random trajectory. Use one repeat for quick exploration and at least three for serious comparisons. The official pass benchmark is separate and always uses seeds `(11, 23, 47)`.
-
-            Inspect paths and traces before looking at SWD. A chain that never discovers a mode can have attractive within-mode scatter and high acceptance.
+            Inspect all paths and traces before looking at SWD. Several short chains that remain in the same mode are not equivalent to genuine global exploration.
             """,
             "interactive",
         )
@@ -334,7 +336,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             Replace every value below. RWMH uses `scale = sigma`; ULA/MALA use `scale = eta`; HMC uses `scale = epsilon` plus `n_leapfrog = L`. The supplied values are starting guesses, not optimized answers.
 
-            **Edit only `scale` and, for HMC, `n_leapfrog` inside `student_settings`.** Choose them separately for all three targets. Do not change the official 4,000-state budget, 25% burn-in, three seeds `(11, 23, 47)`, initial states, or SWD thresholds. The table gives each row a direct **PASS / TUNE MORE** status. The plot then shows whether the worst-seed SWD approaches and crosses the dashed requirement as retained iterations accumulate. Curves need not decrease monotonically.
+            For every row, edit `scale`, `n_chains`, and `burn_fraction`; HMC rows additionally edit `n_leapfrog`. Choose them separately for all three targets. Do not change the official 40,000-evaluation budget, benchmark base seeds `(11, 23, 47)`, initial states, accounting rule, or SWD thresholds. The table gives each row a direct **PASS / TUNE MORE** status. The plot shows whether worst-repeat SWD approaches and crosses the dashed requirement as the shared evaluation budget is spent. Curves need not decrease monotonically.
             """,
             "assignment",
         )
@@ -362,8 +364,7 @@ def build_notebook() -> nbf.NotebookNode:
                 # Official submission evaluation: do not change these arguments.
                 benchmark_results = benchmark_all_settings(
                     student_settings,
-                    n_steps=4000,
-                    burn_fraction=0.25,
+                    target_eval_budget=BENCHMARK_TARGET_EVAL_BUDGET,
                     seeds=(11, 23, 47),
                 )
                 display(HTML(benchmark_results_html(benchmark_results)))
@@ -381,7 +382,7 @@ def build_notebook() -> nbf.NotebookNode:
             r"""
             ## Task A — tilted Gaussian
 
-            1. Tune all four methods. For HMC, explore both $\epsilon$ and $L$.
+            1. Tune all four methods, including $C$ and burn-in. For HMC, also explore both $\epsilon$ and $L$.
             2. Derive the Gaussian ULA stability condition $\eta<2\lambda_{\min}(\Sigma)$ and compare it with empirical instability.
             3. Explain the isotropic RWMH compromise between the long and narrow axes.
             4. Compare MALA and HMC gradient costs as well as raw ESS.
@@ -396,7 +397,7 @@ def build_notebook() -> nbf.NotebookNode:
             r"""
             ## Task B — banana geometry
 
-            1. Tune all four methods and report the fixed-budget rows.
+            1. Tune all four methods, chain allocation, and burn-in; report the fixed-budget rows.
             2. Find a high-acceptance setting with poor exploration and explain its trace/ACF.
             3. Find a ULA step with visible bias. Which task-specific diagnostics expose it?
             4. Explain how longer HMC trajectories follow the curved typical set and when they cease to help.
@@ -411,7 +412,7 @@ def build_notebook() -> nbf.NotebookNode:
             r"""
             ## Task C — 65:35 mixture
 
-            1. Tune all four methods; report mode mass and switches as well as SWD.
+            1. Tune all four methods, chain allocation, and burn-in; report mode mass and switches as well as SWD.
             2. Construct a run with convincing within-mode scatter that misses a component.
             3. Explain why coordinate ESS can be misleading and why the mode indicator is included.
             4. Compare two initial components. Which methods remain sensitive to initialization at this budget?
@@ -426,11 +427,13 @@ def build_notebook() -> nbf.NotebookNode:
             r"""
             ## Task D — bias, cost, and synthesis
 
-            1. Increase the chain length at fixed scale. Contrast exact MH-corrected methods with finite-step ULA.
-            2. Halve ULA's step and increase transitions. Explain the bias–mixing–cost trade-off.
-            3. Rank the four methods for each core target using mean/worst SWD first and efficiency diagnostics second.
-            4. Use the SWD convergence figure: identify when each curve first crosses its threshold and whether it remains below it. Explain any non-monotonicity.
-            5. Explain why a low SWD from one lucky mixture trajectory is insufficient evidence.
+            1. Compare one long chain with several shorter chains at the same 40,000-evaluation budget. Which targets benefit from restarts, and which require long trajectories?
+            2. Explain your chosen burn-in. Show one example where too little retains initialization bias and one where too much wastes the fixed budget.
+            3. For HMC, explain the interaction among $\epsilon$, $L$, chain count, and the automatically determined number of transitions.
+            4. For ULA, halve $\eta$ without changing the evaluation budget. Explain the bias–mixing trade-off.
+            5. Rank the four methods for each core target using mean/worst SWD first and ESS per 1,000 evaluations second.
+            6. Use the convergence figure: identify when each curve first crosses its threshold and whether it remains below it. Explain any non-monotonicity.
+            7. Explain why a low SWD from one lucky benchmark repeat is insufficient evidence.
 
             **Your answer:** _replace this text._
             """,
@@ -443,10 +446,11 @@ def build_notebook() -> nbf.NotebookNode:
             ## Submission checklist
 
             - [ ] I inspected the separate implementation modules.
-            - [ ] I replaced all 12 core settings and ran the unchanged fixed benchmark.
+            - [ ] I tuned method scale, chain count, and burn-in for all 12 rows; I also tuned $L$ for HMC.
+            - [ ] I ran the unchanged 40,000-evaluation benchmark with all three fixed base seeds.
             - [ ] Every row in the benchmark table says **PASS** (12/12).
-            - [ ] I reported mean $\pm$ SD and worst-seed SWD.
-            - [ ] I interpreted the SWD-over-retained-iterations figure.
+            - [ ] I reported mean $\pm$ SD and worst-repeat SWD.
+            - [ ] I interpreted the SWD-over-target-evaluation-budget figure.
             - [ ] I interpreted acceptance, ESS/target-evaluation cost, and task diagnostics.
             - [ ] I completed the 10:90 rare-mode case-study questions.
             - [ ] I answered Tasks A–D and restarted the kernel before submission.

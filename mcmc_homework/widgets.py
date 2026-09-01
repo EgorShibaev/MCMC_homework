@@ -7,9 +7,17 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 
-from .experiments import DEFAULT_SETTINGS, METHODS, Experiment, run_experiment, summarize_experiments
+from .experiments import (
+    BENCHMARK_TARGET_EVAL_BUDGET,
+    DEFAULT_SETTINGS,
+    MAX_STUDENT_CHAINS,
+    METHODS,
+    EnsembleExperiment,
+    run_ensemble_experiment,
+)
 from .targets import TARGETS
-from .visualization import metrics_html, plot_sampling_run
+from .samplers import states_for_target_evals
+from .visualization import metrics_html, plot_ensemble_sampling_run
 
 
 class SamplingLab:
@@ -28,8 +36,7 @@ class SamplingLab:
         self._display = display
         self._HTML = HTML
         self._clear_output = clear_output
-        self.last_experiments: list[Experiment] = []
-        self.last_summary: dict[str, float] | None = None
+        self.last_ensemble: EnsembleExperiment | None = None
 
         common_layout = widgets.Layout(width="470px")
         common_style = {"description_width": "90px"}
@@ -68,20 +75,10 @@ class SamplingLab:
             layout=widgets.Layout(width="470px", display="none"),
             style=common_style,
         )
-        self.n_steps = widgets.IntSlider(
-            value=3000,
-            min=500,
-            max=10000,
-            step=500,
-            description="iterations",
-            continuous_update=False,
-            layout=common_layout,
-            style=common_style,
-        )
         self.burn_fraction = widgets.FloatSlider(
             value=0.25,
             min=0.05,
-            max=0.50,
+            max=0.40,
             step=0.05,
             description="burn-in",
             readout_format=".0%",
@@ -89,26 +86,23 @@ class SamplingLab:
             layout=common_layout,
             style=common_style,
         )
-        self.repetitions = widgets.IntSlider(
-            value=1,
+        self.n_chains = widgets.IntSlider(
+            value=2,
             min=1,
-            max=5,
+            max=MAX_STUDENT_CHAINS,
             step=1,
-            description="repeats",
+            description="chains C",
             continuous_update=False,
             layout=common_layout,
             style=common_style,
         )
-        self.seed = widgets.IntSlider(
-            value=11,
-            min=0,
-            max=999,
-            step=1,
-            description="base seed",
-            continuous_update=False,
-            layout=common_layout,
-            style=common_style,
+        self.budget = widgets.HTML(
+            value=(
+                "<b>Fixed total budget:</b> "
+                f"{BENCHMARK_TARGET_EVAL_BUDGET:,} target evaluations"
+            )
         )
+        self.allocation_preview = widgets.HTML()
         self.run_button = widgets.Button(
             description="Start sampling",
             button_style="primary",
@@ -125,16 +119,19 @@ class SamplingLab:
                 self.method,
                 self.scale,
                 self.n_leapfrog,
-                self.n_steps,
                 self.burn_fraction,
-                self.repetitions,
-                self.seed,
+                self.n_chains,
+                self.budget,
+                self.allocation_preview,
                 widgets.HBox([self.run_button, self.status]),
             ]
         )
         self.ui = widgets.VBox([controls, self.output])
         self.target.observe(self._on_configuration_change, names="value")
         self.method.observe(self._on_configuration_change, names="value")
+        self.n_chains.observe(self._update_allocation_preview, names="value")
+        self.n_leapfrog.observe(self._update_allocation_preview, names="value")
+        self.burn_fraction.observe(self._update_allocation_preview, names="value")
         self.run_button.on_click(self._on_click)
         self._on_configuration_change(None)
 
@@ -156,6 +153,8 @@ class SamplingLab:
         self.scale.min = lower
         setting = DEFAULT_SETTINGS[(self.target.value, method)]
         self.scale.value = float(setting["scale"])
+        self.n_chains.value = int(setting["n_chains"])
+        self.burn_fraction.value = float(setting["burn_fraction"])
         if method == "HMC":
             self.n_leapfrog.layout.display = "flex"
             self.n_leapfrog.value = int(setting["n_leapfrog"])
@@ -165,46 +164,73 @@ class SamplingLab:
         self.status.value = (
             f"<span style='margin-left:8px;color:#555'>{escape(target.challenge)}</span>"
         )
+        self._update_allocation_preview(None)
 
-    def run(self) -> tuple[list[Experiment], dict[str, float]]:
-        seeds = [
-            int(self.seed.value) + 101 * repeat
-            for repeat in range(self.repetitions.value)
+    def _update_allocation_preview(self, _change: Any) -> None:
+        chain_count = int(self.n_chains.value)
+        allocation, remainder = divmod(
+            BENCHMARK_TARGET_EVAL_BUDGET, chain_count
+        )
+        budgets = [
+            allocation + int(index < remainder) for index in range(chain_count)
         ]
-        experiments = [
-            run_experiment(
-                target_key=self.target.value,
-                method=self.method.value,
-                scale=float(self.scale.value),
-                n_steps=int(self.n_steps.value),
-                burn_fraction=float(self.burn_fraction.value),
-                seed=seed,
-                n_leapfrog=int(self.n_leapfrog.value),
+        state_counts = [
+            states_for_target_evals(
+                self.method.value, budget, int(self.n_leapfrog.value)
             )
-            for seed in seeds
+            for budget in budgets
         ]
-        summary = summarize_experiments(experiments)
-        self.last_experiments = experiments
-        self.last_summary = summary
-        return experiments, summary
+        retained_counts = [
+            count - int(count * float(self.burn_fraction.value))
+            for count in state_counts
+        ]
+        state_range = (
+            f"{state_counts[0]:,}"
+            if len(set(state_counts)) == 1
+            else f"{min(state_counts):,}–{max(state_counts):,}"
+        )
+        seeds = ", ".join(str(11 + 101 * index) for index in range(chain_count))
+        self.allocation_preview.value = (
+            f"<b>Derived allocation:</b> {state_range} states per chain; "
+            f"{sum(retained_counts):,} retained states combined; seeds {seeds}."
+        )
+
+    def run(self) -> EnsembleExperiment:
+        ensemble = run_ensemble_experiment(
+            target_key=self.target.value,
+            method=self.method.value,
+            scale=float(self.scale.value),
+            target_eval_budget=BENCHMARK_TARGET_EVAL_BUDGET,
+            n_chains=int(self.n_chains.value),
+            burn_fraction=float(self.burn_fraction.value),
+            base_seed=11,
+            n_leapfrog=int(self.n_leapfrog.value),
+        )
+        self.last_ensemble = ensemble
+        return ensemble
 
     def _on_click(self, _button: Any) -> None:
         self.run_button.disabled = True
         self.run_button.description = "Running…"
         self.status.value = "<span style='margin-left:8px'>Sampling and scoring…</span>"
         try:
-            experiments, summary = self.run()
+            ensemble = self.run()
             with self.output:
                 self._clear_output(wait=True)
-                figure = plot_sampling_run(experiments[0])
+                figure = plot_ensemble_sampling_run(ensemble)
                 self._display(figure)
                 plt.close(figure)
-                self._display(self._HTML(metrics_html(experiments[0], summary)))
-                if experiments[0].result.message:
+                self._display(self._HTML(metrics_html(ensemble)))
+                messages = [
+                    chain.result.message
+                    for chain in ensemble.chains
+                    if chain.result.message
+                ]
+                if messages:
                     self._display(
                         self._HTML(
                             f"<p style='color:#b00020'><b>Warning:</b> "
-                            f"{escape(experiments[0].result.message)}</p>"
+                            f"{escape(' | '.join(messages))}</p>"
                         )
                     )
             self.status.value = "<span style='margin-left:8px;color:#176b2c'>Finished.</span>"

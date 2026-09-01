@@ -10,26 +10,33 @@ import numpy as np
 
 from .metrics import (
     compute_metrics,
+    compute_ensemble_metrics,
     get_reference_sample,
     standardized_sliced_wasserstein,
 )
-from .samplers import SamplerResult, run_sampler
+from .samplers import (
+    SamplerResult,
+    run_sampler,
+    states_for_target_evals,
+)
 from .targets import Array, TARGETS
 
 
 METHODS = ("RWMH", "ULA", "MALA", "HMC")
 CORE_TARGET_KEYS = ("gaussian", "banana", "mixture")
 BENCHMARK_SEEDS = (11, 23, 47)
+BENCHMARK_TARGET_EVAL_BUDGET = 40_000
+MAX_STUDENT_CHAINS = 8
 
-# A row passes only when its *worst* fixed-seed SWD is at or below the
-# target-specific threshold and none of the chains diverged.  These thresholds
+# A row passes only when its *worst* benchmark-ensemble SWD is at or below the
+# target-specific threshold and none of the ensembles diverged. These thresholds
 # were calibrated with the correct reference implementations at the fixed
-# 4,000-state homework budget.  They are attainable by every method, but
+# 40,000-target-evaluation ensemble budget. They are attainable by every method, but
 # the deliberately untuned defaults do not all pass.
 SWD_PASS_THRESHOLDS: dict[str, float] = {
-    "gaussian": 0.50,
-    "banana": 0.50,
-    "mixture": 0.75,
+    "gaussian": 0.08,
+    "banana": 0.13,
+    "mixture": 0.38,
 }
 
 
@@ -52,6 +59,8 @@ DEFAULT_SETTINGS: dict[tuple[str, str], dict[str, float | int]] = {
     ("imbalanced_mixture", "MALA"): {"scale": 0.080},
     ("imbalanced_mixture", "HMC"): {"scale": 0.12, "n_leapfrog": 20},
 }
+for _setting in DEFAULT_SETTINGS.values():
+    _setting.update({"n_chains": 2, "burn_fraction": 0.25})
 
 
 @dataclass
@@ -64,6 +73,22 @@ class Experiment:
 
 
 @dataclass
+class EnsembleExperiment:
+    """Independent chains sharing one fixed target-evaluation budget."""
+
+    target_key: str
+    method: str
+    scale: float
+    n_leapfrog: int | None
+    n_chains: int
+    burn_fraction: float
+    base_seed: int
+    target_eval_budget: int
+    chains: list[Experiment]
+    metrics: dict[str, Any]
+
+
+@dataclass
 class BenchmarkResult:
     """Repeated-seed result for one target, method, and hyperparameter setting."""
 
@@ -71,7 +96,10 @@ class BenchmarkResult:
     method: str
     scale: float
     n_leapfrog: int | None
-    experiments: list[Experiment]
+    n_chains: int
+    burn_fraction: float
+    target_eval_budget: int
+    experiments: list[EnsembleExperiment]
     summary: dict[str, float]
 
     @property
@@ -128,7 +156,83 @@ def run_experiment(
     )
 
 
-def summarize_experiments(experiments: Sequence[Experiment]) -> dict[str, float]:
+def run_ensemble_experiment(
+    target_key: str,
+    method: str,
+    scale: float,
+    target_eval_budget: int = BENCHMARK_TARGET_EVAL_BUDGET,
+    n_chains: int = 1,
+    burn_fraction: float = 0.25,
+    base_seed: int = 11,
+    initial: Array | None = None,
+    n_leapfrog: int = 10,
+) -> EnsembleExperiment:
+    """Run independent chains that split one fixed target-evaluation budget."""
+
+    if target_key not in TARGETS:
+        raise KeyError(f"Unknown target {target_key!r}.")
+    if int(n_chains) != n_chains or not 1 <= n_chains <= MAX_STUDENT_CHAINS:
+        raise ValueError(f"n_chains must be an integer from 1 to {MAX_STUDENT_CHAINS}.")
+    if int(target_eval_budget) != target_eval_budget or target_eval_budget < 1:
+        raise ValueError("target_eval_budget must be a positive integer.")
+    if not 0.0 <= burn_fraction < 0.9:
+        raise ValueError("burn_fraction must lie in [0, 0.9).")
+
+    chain_count = int(n_chains)
+    total_budget = int(target_eval_budget)
+    base_allocation, remainder = divmod(total_budget, chain_count)
+    allocations = [
+        base_allocation + int(index < remainder) for index in range(chain_count)
+    ]
+    state_counts = [
+        states_for_target_evals(method, allocation, n_leapfrog)
+        for allocation in allocations
+    ]
+    if any(
+        state_count - int(np.floor(state_count * burn_fraction)) < 3
+        for state_count in state_counts
+    ):
+        raise ValueError(
+            "This budget, chain count, burn-in, and HMC trajectory leave fewer "
+            "than three retained states in at least one chain."
+        )
+
+    chains = [
+        run_experiment(
+            target_key=target_key,
+            method=method,
+            scale=scale,
+            n_steps=state_count,
+            burn_fraction=burn_fraction,
+            seed=int(base_seed) + 101 * index,
+            initial=initial,
+            n_leapfrog=n_leapfrog,
+        )
+        for index, state_count in enumerate(state_counts)
+    ]
+    target = TARGETS[target_key]
+    metrics = compute_ensemble_metrics(
+        target,
+        [chain.result for chain in chains],
+        [chain.burn_in for chain in chains],
+    )
+    return EnsembleExperiment(
+        target_key=target_key,
+        method=chains[0].result.method,
+        scale=float(scale),
+        n_leapfrog=int(n_leapfrog) if chains[0].result.method == "HMC" else None,
+        n_chains=chain_count,
+        burn_fraction=float(burn_fraction),
+        base_seed=int(base_seed),
+        target_eval_budget=total_budget,
+        chains=chains,
+        metrics=metrics,
+    )
+
+
+def summarize_experiments(
+    experiments: Sequence[Experiment | EnsembleExperiment],
+) -> dict[str, float]:
     """Aggregate repeated-seed metrics while retaining a worst-run check."""
 
     if not experiments:
@@ -155,20 +259,22 @@ def benchmark_setting(
     method: str,
     scale: float,
     seeds: Sequence[int] = BENCHMARK_SEEDS,
-    n_steps: int = 4000,
+    target_eval_budget: int = BENCHMARK_TARGET_EVAL_BUDGET,
+    n_chains: int = 1,
     burn_fraction: float = 0.25,
     n_leapfrog: int = 10,
-) -> tuple[list[Experiment], dict[str, float]]:
-    """Evaluate one setting at a fixed budget over multiple seeds."""
+) -> tuple[list[EnsembleExperiment], dict[str, float]]:
+    """Evaluate one ensemble setting over fixed independent benchmark repeats."""
 
     experiments = [
-        run_experiment(
-            target_key,
-            method,
-            scale,
-            n_steps=n_steps,
+        run_ensemble_experiment(
+            target_key=target_key,
+            method=method,
+            scale=scale,
+            target_eval_budget=target_eval_budget,
+            n_chains=n_chains,
             burn_fraction=burn_fraction,
-            seed=int(seed),
+            base_seed=int(seed),
             n_leapfrog=n_leapfrog,
         )
         for seed in seeds
@@ -191,31 +297,38 @@ def normalized_setting(
     settings: Mapping[tuple[str, str], Mapping[str, float | int]],
     target_key: str,
     method: str,
-) -> tuple[float, int]:
+) -> tuple[float, int, int, float]:
     """Read a student setting with a consistent default for non-HMC methods."""
 
     setting = settings[(target_key, method)]
-    return float(setting["scale"]), int(setting.get("n_leapfrog", 10))
+    return (
+        float(setting["scale"]),
+        int(setting.get("n_leapfrog", 10)),
+        int(setting.get("n_chains", 1)),
+        float(setting.get("burn_fraction", 0.25)),
+    )
 
 
 def benchmark_all_settings(
     settings: Mapping[tuple[str, str], Mapping[str, float | int]],
-    n_steps: int = 4000,
-    burn_fraction: float = 0.25,
+    target_eval_budget: int = BENCHMARK_TARGET_EVAL_BUDGET,
     seeds: Sequence[int] = BENCHMARK_SEEDS,
 ) -> list[BenchmarkResult]:
-    """Benchmark every core target-method pair at one fixed recorded-state budget."""
+    """Benchmark every core target-method ensemble at one fixed work budget."""
 
     results: list[BenchmarkResult] = []
     for target_key in CORE_TARGET_KEYS:
         for method in METHODS:
-            scale, n_leapfrog = normalized_setting(settings, target_key, method)
+            scale, n_leapfrog, n_chains, burn_fraction = normalized_setting(
+                settings, target_key, method
+            )
             experiments, summary = benchmark_setting(
                 target_key,
                 method,
                 scale,
                 seeds=seeds,
-                n_steps=n_steps,
+                target_eval_budget=target_eval_budget,
+                n_chains=n_chains,
                 burn_fraction=burn_fraction,
                 n_leapfrog=n_leapfrog,
             )
@@ -225,6 +338,9 @@ def benchmark_all_settings(
                     method=method,
                     scale=scale,
                     n_leapfrog=n_leapfrog if method == "HMC" else None,
+                    n_chains=n_chains,
+                    burn_fraction=burn_fraction,
+                    target_eval_budget=int(target_eval_budget),
                     experiments=experiments,
                     summary=summary,
                 )
@@ -233,14 +349,14 @@ def benchmark_all_settings(
 
 
 def swd_convergence(
-    experiments: Sequence[Experiment],
+    experiments: Sequence[EnsembleExperiment],
     checkpoints: Sequence[int] | None = None,
 ) -> dict[str, Array]:
-    """Track mean and worst-seed SWD over nested post-burn-in prefixes.
+    """Track ensemble SWD as cumulative target-evaluation work increases.
 
-    The x-axis is the number of retained transitions, not wall-clock time.
-    Prefixes reuse the exact reference sample and fixed projection directions
-    used by the final benchmark score.
+    At every checkpoint the available work is split across the chosen number of
+    chains and the chosen burn fraction is applied to each resulting prefix.
+    The final point therefore equals the official full-budget score.
     """
 
     if not experiments:
@@ -248,42 +364,65 @@ def swd_convergence(
     target_key = experiments[0].target_key
     if any(experiment.target_key != target_key for experiment in experiments):
         raise ValueError("All experiments must use the same target.")
+    first_experiment = experiments[0]
+    for experiment in experiments[1:]:
+        if (
+            experiment.method != first_experiment.method
+            or experiment.n_chains != first_experiment.n_chains
+            or experiment.n_leapfrog != first_experiment.n_leapfrog
+            or experiment.burn_fraction != first_experiment.burn_fraction
+            or experiment.target_eval_budget != first_experiment.target_eval_budget
+        ):
+            raise ValueError("All experiments must use the same ensemble setting.")
 
-    max_retained = min(
-        experiment.result.samples.shape[0] - experiment.burn_in
-        for experiment in experiments
-    )
-    if max_retained < 3:
-        raise ValueError("Each experiment must have at least three retained states.")
+    total_budget = first_experiment.target_eval_budget
     if checkpoints is None:
-        first = min(50, max_retained)
         checkpoints_array = np.unique(
-            np.geomspace(first, max_retained, num=11).astype(int)
+            np.linspace(max(100, total_budget // 10), total_budget, num=11).astype(int)
         )
     else:
         checkpoints_array = np.unique(np.asarray(checkpoints, dtype=int))
         if (
             checkpoints_array.ndim != 1
             or checkpoints_array.size == 0
-            or checkpoints_array[0] < 2
-            or checkpoints_array[-1] > max_retained
+            or checkpoints_array[0] < 1
+            or checkpoints_array[-1] > total_budget
         ):
             raise ValueError(
-                f"checkpoints must lie between 2 and {max_retained} retained states."
+                f"checkpoints must lie between 1 and the {total_budget} work-unit budget."
             )
 
     reference = get_reference_sample(target_key)
     score_rows = []
     for experiment in experiments:
-        retained = experiment.result.samples[experiment.burn_in :]
-        score_rows.append(
-            [
-                standardized_sliced_wasserstein(
-                    retained[: int(checkpoint)], reference
-                )
-                for checkpoint in checkpoints_array
+        experiment_scores = []
+        for checkpoint in checkpoints_array:
+            allocation, remainder = divmod(int(checkpoint), experiment.n_chains)
+            chain_budgets = [
+                allocation + int(index < remainder)
+                for index in range(experiment.n_chains)
             ]
-        )
+            retained_prefixes = []
+            try:
+                for chain, chain_budget in zip(experiment.chains, chain_budgets):
+                    n_states = states_for_target_evals(
+                        experiment.method,
+                        chain_budget,
+                        experiment.n_leapfrog or 10,
+                    )
+                    n_states = min(n_states, chain.result.samples.shape[0])
+                    burn_in = int(np.floor(n_states * experiment.burn_fraction))
+                    if n_states - burn_in < 2:
+                        raise ValueError
+                    retained_prefixes.append(
+                        chain.result.samples[burn_in:n_states]
+                    )
+                combined = np.concatenate(retained_prefixes, axis=0)
+                score = standardized_sliced_wasserstein(combined, reference)
+            except ValueError:
+                score = float("inf")
+            experiment_scores.append(score)
+        score_rows.append(experiment_scores)
     scores = np.asarray(score_rows, dtype=float)
     finite_columns = np.all(np.isfinite(scores), axis=0)
     means = np.full(checkpoints_array.shape, np.inf, dtype=float)
@@ -298,7 +437,7 @@ def swd_convergence(
         standard_deviations[finite_columns] = 0.0
     worst[finite_columns] = np.max(scores[:, finite_columns], axis=0)
     return {
-        "retained": checkpoints_array,
+        "target_evals": checkpoints_array,
         "mean_swd": means,
         "sd_swd": standard_deviations,
         "worst_swd": worst,

@@ -4,7 +4,15 @@ import unittest
 
 import numpy as np
 
-from mcmc_homework import DEFAULT_SETTINGS, TARGETS, Target2D, run_experiment, run_sampler
+from mcmc_homework import (
+    DEFAULT_SETTINGS,
+    TARGETS,
+    Target2D,
+    run_experiment,
+    run_sampler,
+    states_for_target_evals,
+    target_evals_for_states,
+)
 
 
 class FlatTarget(Target2D):
@@ -111,6 +119,21 @@ class SamplerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_sampler(
                 "HMC", TARGETS["gaussian"], 20, 0.08, seed=1, n_leapfrog=0
+            )
+
+    def test_budget_to_states_never_exceeds_target_evaluations(self) -> None:
+        budget = 40_000
+        for method, n_leapfrog in (
+            ("RWMH", 10),
+            ("ULA", 10),
+            ("MALA", 10),
+            ("HMC", 20),
+        ):
+            n_states = states_for_target_evals(method, budget, n_leapfrog)
+            used = target_evals_for_states(method, n_states, n_leapfrog)
+            self.assertLessEqual(used, budget)
+            self.assertGreater(
+                target_evals_for_states(method, n_states + 1, n_leapfrog), budget
             )
 
     def test_imbalanced_case_study_shows_expected_contrast(self) -> None:
