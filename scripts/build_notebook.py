@@ -217,7 +217,13 @@ def build_notebook() -> nbf.NotebookNode:
             r"""
             ## 4. Interactive tuning lab
 
-            Select a target and method, adjust the logarithmic scale slider, and press **Start sampling**. HMC adds a second slider for leapfrog count $L$. Use one repeat while exploring and at least three repeats when comparing serious candidates.
+            Select a target and method, adjust the logarithmic scale slider, and press **Start sampling**. HMC adds a second slider for leapfrog count $L$.
+
+            **What `repeats` means:** one repeat is one independently randomized MCMC chain with the same target, method, hyperparameters, iteration count, and burn-in. Repeat $r=0,1,\ldots,R-1$ uses seed
+
+            $$\text{seed}_r=\text{base seed}+101r.$$
+
+            For example, `repeats = 5` and `base seed = 11` use seeds `11, 112, 213, 314, 415`. The diagnostic figure shows the **first** chain; the table reports mean $\pm$ SD SWD, worst SWD, and divergence count across **all** repeats. Repeats reveal whether a setting is reliable rather than successful only for one lucky random trajectory. Use one repeat for quick exploration and at least three for serious comparisons. The official pass benchmark is separate and always uses seeds `(11, 23, 47)`.
 
             Inspect paths and traces before looking at SWD. A chain that never discovers a mode can have attractive within-mode scatter and high acceptance.
             """,

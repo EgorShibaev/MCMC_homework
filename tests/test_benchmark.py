@@ -7,6 +7,7 @@ import numpy as np
 from mcmc_homework import (
     SWD_PASS_THRESHOLDS,
     benchmark_passed,
+    metrics_html,
     run_experiment,
     swd_convergence,
 )
@@ -41,6 +42,16 @@ class BenchmarkTests(unittest.TestCase):
         np.testing.assert_allclose(
             curve["worst_swd"], np.max(curve["all_swd"], axis=0)
         )
+
+    def test_metric_table_has_two_columns_and_official_target(self) -> None:
+        experiment = run_experiment(
+            "gaussian", "RWMH", scale=0.7, n_steps=200, seed=11
+        )
+        html = metrics_html(experiment)
+        self.assertNotIn("How to read it", html)
+        self.assertIn("Official worst-seed SWD target", html)
+        self.assertIn("≤ 0.500", html)
+        self.assertEqual(html.count("<th style"), 2)
 
 
 if __name__ == "__main__":

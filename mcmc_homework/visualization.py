@@ -321,45 +321,57 @@ def metrics_html(
     """Return a compact metric table suitable for notebook display."""
 
     metrics = experiment.metrics
-    rows: list[tuple[str, str, str]] = [
+    threshold = SWD_PASS_THRESHOLDS.get(experiment.target_key)
+    threshold_text = (
+        f"≤ {threshold:.3f}" if threshold is not None else "N/A — guided case study"
+    )
+    rows: list[tuple[str, str]] = [
         (
-            "Standardized sliced-Wasserstein (primary; lower is better)",
+            "Single plotted chain: SWD (lower is better)",
             _format_number(metrics["swd"]),
-            f"reference noise floor ≈ {_format_number(metrics['noise_floor'])}",
+        ),
+        (
+            "Official worst-seed SWD target (seeds 11, 23, 47)",
+            threshold_text,
+        ),
+        (
+            "Reference-sample SWD noise floor",
+            f"≈ {_format_number(metrics['noise_floor'])}",
         ),
         (
             "Minimum ESS after burn-in",
             _format_number(metrics["ess_min"], 1),
-            f"{_format_number(metrics['ess_per_1000_evals'], 1)} per 1,000 target evaluations",
+        ),
+        (
+            "Minimum ESS per 1,000 target evaluations",
+            _format_number(metrics["ess_per_1000_evals"], 1),
         ),
         (
             "Acceptance rate",
             "N/A (ULA has no correction)"
             if metrics["acceptance_rate"] is None
             else f"{100.0 * metrics['acceptance_rate']:.1f}%",
-            "diagnostic, not an optimization target",
         ),
     ]
     for label, value in metrics["task"].items():
-        rows.append((label, _format_number(value), "target-specific diagnostic"))
+        rows.append((label, _format_number(value)))
     if summary is not None:
-        rows.insert(
-            0,
+        rows[0:0] = [
             (
-                "Repeated-seed mean ± SD SWD",
+                "All repeats: mean ± SD SWD",
                 f"{_format_number(summary['mean_swd'])} ± {_format_number(summary['sd_swd'])}",
-                f"worst run {_format_number(summary['worst_swd'])}; "
-                f"{int(summary['divergent_runs'])} divergent run(s)",
             ),
-        )
+            ("All repeats: worst SWD", _format_number(summary["worst_swd"])),
+            ("All repeats: divergent runs", str(int(summary["divergent_runs"]))),
+        ]
     body = "".join(
-        f"<tr><td>{escape(label)}</td><td><b>{escape(value)}</b></td><td>{escape(note)}</td></tr>"
-        for label, value, note in rows
+        f"<tr><td>{escape(label)}</td><td><b>{escape(value)}</b></td></tr>"
+        for label, value in rows
     )
     return (
         "<table style='border-collapse:collapse;width:100%;font-size:0.92em'>"
         "<thead><tr><th style='text-align:left'>Metric</th><th style='text-align:left'>Value</th>"
-        "<th style='text-align:left'>How to read it</th></tr></thead>"
+        "</tr></thead>"
         f"<tbody>{body}</tbody></table>"
     )
 
