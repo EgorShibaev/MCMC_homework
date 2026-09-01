@@ -104,21 +104,45 @@ def build_notebook() -> nbf.NotebookNode:
 
             A fourth **10:90 mixture** is a guided case study about rare-mode discovery.
 
-            The primary error is standardized sliced Wasserstein-1 distance (SWD) to an exact iid reference sample. **Lower is better.** Report mean, standard deviation, and worst-seed SWD over fixed seeds. Secondary diagnostics are minimum ESS, ESS per 1,000 target evaluations, acceptance, and target-specific quantities such as mode mass and switches.
+            The primary error is standardized sliced Wasserstein-1 distance (SWD) to an exact iid reference sample. Secondary diagnostics are effective sample size (ESS), ESS per 1,000 target evaluations, acceptance, and target-specific quantities such as mode mass and switches.
 
-            **Formal definitions.** For a retained scalar chain $Z_1,\ldots,Z_N$ with lag-$k$ autocorrelation $\rho_k$, its effective sample size is approximately
+            ### ESS: how much independent information is in the chain?
 
-            $$\operatorname{ESS}=\frac{N}{1+2\sum_{k\geq 1}\rho_k}.$$
+            **ESS stands for Effective Sample Size.** MCMC states are usually correlated: if the chain moves slowly, $Z_{t+1}$ resembles $Z_t$ and contributes little new information. ESS translates $N$ correlated retained states into the approximate number of independent samples with the same precision for estimating a scalar summary.
 
-            In practice the sum is truncated using a stable positive-sequence rule. For a multivariate chain, this notebook computes ESS for several diagnostic features and reports the minimum. The cost-normalized value is $1000\,\operatorname{ESS}/(\text{target evaluations})$.
+            For a retained scalar chain $Z_1,\ldots,Z_N$, let $\rho_k=\operatorname{Corr}(Z_t,Z_{t+k})$ be its autocorrelation at lag $k$. Then
 
-            For fixed unit directions $\theta_1,\ldots,\theta_M$, the standardized sliced Wasserstein score used here is
+            $$\operatorname{ESS}\approx\frac{N}{\underbrace{1+2\sum_{k\geq 1}\rho_k}_{\text{integrated autocorrelation time}}}.$$
+
+            - If the states are independent, $\rho_k\approx0$ and $\operatorname{ESS}\approx N$.
+            - If correlations remain positive over many lags, the denominator grows and $\operatorname{ESS}\ll N$.
+            - For example, 5,000 retained states with $\operatorname{ESS}=200$ contain roughly the same information for that summary as 200 independent samples.
+
+            In practice the infinite sum is estimated with a stable truncation rule. ESS is feature-specific, so this notebook evaluates several features (coordinates and a target-specific global feature) and reports the minimum. A mode indicator that never changes is assigned ESS zero. To compare computational efficiency, the notebook also reports
+
+            $$\operatorname{ESS/1k}=1000\,\frac{\operatorname{ESS}}{\text{number of target evaluations}}.$$
+
+            **Higher ESS is better**, but high ESS alone does not prove that the sampled distribution is correct. A chain can move efficiently inside one mode while completely missing another mode.
+
+            ### SWD: how close is the sampled distribution to the target?
+
+            **SWD stands for Sliced Wasserstein Distance.** Directly comparing two two-dimensional clouds is difficult, so SWD looks at many one-dimensional *shadows*: project both clouds onto a direction $\theta_m$, compare their projected distributions, and average over directions.
+
+            For fixed unit directions $\theta_1,\ldots,\theta_M$, the standardized score used here is
 
             $$\operatorname{SWD}(P,Q)=\frac{1}{M}\sum_{m=1}^{M}
             \frac{W_1\!\left((\theta_m^\top)_\#P,(\theta_m^\top)_\#Q\right)}
             {\operatorname{SD}_{Y\sim Q}(\theta_m^\top Y)},$$
 
-            where $P$ is the retained-chain distribution, $Q$ is the exact target reference, $(\theta^\top)_\#P$ is the one-dimensional projected distribution, and $W_1(F,G)=\int_0^1|F^{-1}(u)-G^{-1}(u)|\,du$. Thus **ESS measures efficiency (higher is better), while SWD measures distributional error (lower is better)**. High ESS does not guarantee low SWD when a chain is trapped in one mode.
+            where $P$ is the retained-chain distribution and $Q$ is an exact independent reference sample from the target. The one-dimensional Wasserstein distance
+
+            $$W_1(F,G)=\int_0^1\left|F^{-1}(u)-G^{-1}(u)\right|\,du$$
+
+            compares matching quantiles; intuitively, it measures how far probability mass must move to turn one projected distribution into the other. Dividing by the target standard deviation makes the score unitless and comparable across directions.
+
+            **Lower SWD is better.** Zero means an exact empirical match, although two finite correct samples normally have a small nonzero distance—the reported *reference noise floor*. SWD can detect incorrect means, spread, geometry, and missing or incorrectly weighted modes.
+
+            In short: **ESS measures sampling efficiency; SWD measures distributional accuracy. A good run needs both.**
 
             ### Explicit pass criterion
 
