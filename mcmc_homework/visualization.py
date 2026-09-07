@@ -193,7 +193,7 @@ def plot_ensemble_sampling_run(
     figure: Figure | None = None,
     benchmark_curve: Mapping[str, np.ndarray] | None = None,
 ) -> Figure:
-    """Show one repeat's paths, optionally with the official repeated SWD curve."""
+    """Show one repeat's paths and highlight its SWD among all repeat curves."""
 
     target = TARGETS[ensemble.target_key]
     figure = plt.figure(figsize=(12.0, 8.2)) if figure is None else figure
@@ -259,16 +259,29 @@ def plot_ensemble_sampling_run(
     ax_trace.legend(loc="best", fontsize=7, ncols=2)
 
     curve = swd_convergence([ensemble]) if benchmark_curve is None else benchmark_curve
-    score_key = "mean_swd" if benchmark_curve is None else "worst_swd"
-    finite = np.isfinite(curve[score_key])
-    ax_swd.plot(
-        curve["target_evals"][finite],
-        curve[score_key][finite],
-        marker="o",
-        markersize=3.0,
-        color="#2468b4",
-        label="combined-chain SWD" if benchmark_curve is None else "worst SWD over 3 repeats",
-    )
+    if benchmark_curve is None:
+        ax_swd.plot(
+            curve["target_evals"],
+            np.where(np.isfinite(curve["mean_swd"]), curve["mean_swd"], np.nan),
+            marker="o", markersize=3.0, color="#2468b4", label="combined-chain SWD",
+        )
+    else:
+        for index, (seed, scores) in enumerate(zip(curve["base_seeds"], curve["all_swd"], strict=True)):
+            selected = int(seed) == ensemble.base_seed
+            label = f"Seed {seed}" + (" (selected)" if selected else "")
+            finite = np.isfinite(scores)
+            if not np.all(finite):
+                label += " — non-finite"
+            ax_swd.plot(
+                curve["target_evals"], np.where(finite, scores, np.nan),
+                color=colors(index % 10),
+                linewidth=2.6 if selected else 1.3,
+                alpha=1.0 if selected else 0.65,
+                linestyle="-" if selected else "--",
+                marker="o", markersize=5.0 if selected else 3.0,
+                zorder=4 if selected else 2,
+                label=label,
+            )
     threshold = SWD_PASS_THRESHOLDS.get(ensemble.target_key)
     if threshold is not None:
         ax_swd.axhline(
@@ -282,7 +295,7 @@ def plot_ensemble_sampling_run(
         xlabel="target-evaluation budget per repeat",
         ylabel="SWD (lower is better)",
         title="Combined accuracy as the budget is spent" if benchmark_curve is None
-        else "Official benchmark accuracy (all 3 repeats)",
+        else "SWD by seed",
     )
     ax_swd.legend(loc="best", fontsize=8)
 
@@ -329,7 +342,7 @@ def plot_ensemble_sampling_run(
         # the result banner/table. The figure only needs to identify its scope.
         title = (
             f"{target.name} — {ensemble.method}\n"
-            f"Paths and ACF: seed {ensemble.base_seed} | SWD curve: all 3 seeds"
+            f"Paths and ACF: seed {ensemble.base_seed} | SWD curves: all 3 seeds"
         )
     figure.suptitle(title, fontsize=11)
     figure.tight_layout(rect=(0, 0, 1, 0.95))

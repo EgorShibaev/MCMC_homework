@@ -21,6 +21,42 @@ from mcmc_homework import (
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_lab_plots_each_seed_and_moves_only_the_highlight(self) -> None:
+        seeds = (47, 11, 23)  # labels must follow data, not a hard-coded order
+        ensembles, _ = benchmark_setting(
+            "gaussian", "RWMH", scale=0.7, seeds=seeds, target_eval_budget=800,
+        )
+        curve = swd_convergence(ensembles, checkpoints=(200, 500, 800))
+        np.testing.assert_array_equal(curve["base_seeds"], seeds)
+        colors = {}
+        for selected in (ensembles[0], ensembles[2]):
+            figure = plot_ensemble_sampling_run(selected, benchmark_curve=curve)
+            try:
+                lines = figure.axes[2].lines
+                self.assertEqual(len(lines), 4)  # three seeds plus the threshold
+                for index, seed in enumerate(seeds):
+                    line = lines[index]
+                    active = seed == selected.base_seed
+                    self.assertEqual(line.get_label(), f"Seed {seed}" + (" (selected)" if active else ""))
+                    np.testing.assert_array_equal(line.get_xdata(), curve["target_evals"])
+                    np.testing.assert_allclose(line.get_ydata(), curve["all_swd"][index])
+                    self.assertEqual(line.get_linestyle(), "-" if active else "--")
+                    self.assertEqual(line.get_linewidth(), 2.6 if active else 1.3)
+                    if seed in colors:
+                        self.assertEqual(line.get_color(), colors[seed])
+                    colors[seed] = line.get_color()
+            finally:
+                plt.close(figure)
+        # A divergent/non-finite prefix must create a gap, not a connecting line.
+        curve["all_swd"][1, 1] = np.inf
+        figure = plot_ensemble_sampling_run(ensembles[1], benchmark_curve=curve)
+        try:
+            line = figure.axes[2].lines[1]
+            self.assertTrue(np.isnan(line.get_ydata()[1]))
+            self.assertIn("non-finite", line.get_label())
+        finally:
+            plt.close(figure)
+
     def test_threshold_precision_in_lab_benchmark_and_plots(self) -> None:
         ensembles, summary = benchmark_setting(
             "banana", "RWMH", scale=0.7, target_eval_budget=800, seeds=(11,)

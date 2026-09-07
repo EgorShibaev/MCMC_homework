@@ -438,6 +438,7 @@ def swd_convergence(
         standard_deviations[finite_columns] = 0.0
     worst[finite_columns] = np.max(scores[:, finite_columns], axis=0)
     return {
+        "base_seeds": np.asarray([experiment.base_seed for experiment in experiments]),
         "target_evals": checkpoints_array,
         "mean_swd": means,
         "sd_swd": standard_deviations,

@@ -52,7 +52,9 @@ number of transitions. These allocation trade-offs are part of the assignment.
 
 The interactive lab evaluates the same three repeats as the final benchmark on
 every Start click: 40,000 calls per repeat, at most 120,000 calls total. Its
-PASS / TUNE MORE banner and convergence curve use the **worst-repeat SWD**.
+PASS / TUNE MORE banner uses the **worst-repeat final SWD**. The lab accuracy
+panel plots all three seed curves, highlighting the selected seed with a thicker
+solid line and a labelled legend entry; the other curves are thinner and dashed.
 The View traces selector only changes which repeat's paths and diagnostics are
 shown; it does not rerun sampling or change the grade. A low single-repeat SWD
 is not a benchmark pass. The dashboard and metric table are replaced on every
