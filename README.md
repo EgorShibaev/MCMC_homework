@@ -50,6 +50,14 @@ and pass thresholds are fixed. Choosing more chains makes each chain shorter;
 increasing burn-in leaves fewer scored states; increasing HMC's `L` reduces its
 number of transitions. These allocation trade-offs are part of the assignment.
 
+The interactive lab evaluates the same three repeats as the final benchmark on
+every Start click: 40,000 calls per repeat, at most 120,000 calls total. Its
+PASS / TUNE MORE banner and convergence curve use the **worst-repeat SWD**.
+The View traces selector only changes which repeat's paths and diagnostics are
+shown; it does not rerun sampling or change the grade. A low single-repeat SWD
+is not a benchmark pass. The dashboard and metric table are replaced on every
+click, not appended.
+
 ## Required experimental analysis
 
 A passing benchmark table alone is not a complete submission. Students keep a

@@ -191,8 +191,9 @@ def plot_sampling_run(
 def plot_ensemble_sampling_run(
     ensemble: EnsembleExperiment,
     figure: Figure | None = None,
+    benchmark_curve: Mapping[str, np.ndarray] | None = None,
 ) -> Figure:
-    """Show all chains and the combined fixed-budget ensemble diagnostics."""
+    """Show one repeat's paths, optionally with the official repeated SWD curve."""
 
     target = TARGETS[ensemble.target_key]
     figure = plt.figure(figsize=(12.0, 8.2)) if figure is None else figure
@@ -257,15 +258,16 @@ def plot_ensemble_sampling_run(
     )
     ax_trace.legend(loc="best", fontsize=7, ncols=2)
 
-    curve = swd_convergence([ensemble])
-    finite = np.isfinite(curve["mean_swd"])
+    curve = swd_convergence([ensemble]) if benchmark_curve is None else benchmark_curve
+    score_key = "mean_swd" if benchmark_curve is None else "worst_swd"
+    finite = np.isfinite(curve[score_key])
     ax_swd.plot(
         curve["target_evals"][finite],
-        curve["mean_swd"][finite],
+        curve[score_key][finite],
         marker="o",
         markersize=3.0,
         color="#2468b4",
-        label="combined-chain SWD",
+        label="combined-chain SWD" if benchmark_curve is None else "worst SWD over 3 repeats",
     )
     threshold = SWD_PASS_THRESHOLDS.get(ensemble.target_key)
     if threshold is not None:
@@ -277,9 +279,10 @@ def plot_ensemble_sampling_run(
             label=f"official target = {threshold:.3f}",
         )
     ax_swd.set(
-        xlabel="cumulative target-evaluation budget",
+        xlabel="target-evaluation budget per repeat",
         ylabel="SWD (lower is better)",
-        title="Combined accuracy as the budget is spent",
+        title="Combined accuracy as the budget is spent" if benchmark_curve is None
+        else "Official benchmark accuracy (all 3 repeats)",
     )
     ax_swd.legend(loc="best", fontsize=8)
 
@@ -313,12 +316,21 @@ def plot_ensemble_sampling_run(
 
     score = ensemble.metrics["swd"]
     score_text = "∞" if not np.isfinite(score) else f"{score:.3f}"
+    subtitle = f"Displayed paths: base seed {ensemble.base_seed}; this repeat's SWD={score_text}"
+    if benchmark_curve is not None:
+        worst = benchmark_curve["worst_swd"][-1]
+        worst_text = "∞" if not np.isfinite(worst) else f"{worst:.4f}"
+        subtitle = (
+            f"Official worst-repeat SWD={worst_text} | "
+            f"displayed paths: seed {ensemble.base_seed} (SWD={score_text})"
+        )
     integrator = f", L={ensemble.n_leapfrog}" if ensemble.method == "HMC" else ""
     figure.suptitle(
         f"{target.name} — {ensemble.method} | scale={ensemble.scale:.4g}{integrator}, "
         f"C={ensemble.n_chains}, burn={100.0 * ensemble.burn_fraction:.0f}%, "
-        f"budget={ensemble.target_eval_budget:,}, SWD={score_text}",
-        fontsize=12,
+        f"budget/repeat={ensemble.target_eval_budget:,}\n"
+        f"{subtitle}",
+        fontsize=11,
     )
     figure.tight_layout(rect=(0, 0, 1, 0.95))
     return figure

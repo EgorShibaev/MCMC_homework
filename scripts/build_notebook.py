@@ -285,16 +285,31 @@ def build_notebook() -> nbf.NotebookNode:
             r"""
             ## 4. Interactive tuning lab
 
-            The lab now mirrors one official benchmark ensemble. Select a target and method, tune its scale, choose burn-in and the number of chains $C$, and press **Start sampling**. HMC also exposes leapfrog count $L$. The total budget is always 40,000 target evaluations; changing $C$ or $L$ automatically changes the number of states produced by each chain.
+            The lab evaluates one complete official benchmark row. Select a target and method, tune its scale, choose burn-in and the number of chains $C$, and press **Start sampling**. HMC also exposes leapfrog count $L$. Each of the three fixed repeats receives 40,000 target evaluations, shared across its $C$ chains (at most 120,000 calls per click). Changing $C$ or $L$ automatically changes the number of states produced by each chain.
 
-            The dashboard shows every chain path, per-chain traces, combined SWD as the budget is spent, and within-chain autocorrelation averaged across chains. The table scores all retained chains together. This lab uses base seed 11; the final benchmark repeats the same ensemble design with base seeds 11, 23, and 47.
+            **Read the PASS / TUNE MORE banner, not just the SWD of the displayed paths.** Start always evaluates base seeds 11, 23, and 47 and grades their worst SWD, exactly like the final benchmark. The accuracy curve also shows the worst-repeat score. Three repeats test robustness to randomness; they are not extra student-selected chains and their samples are not pooled across repeats.
+
+            The dashboard appears once. **View traces** selects which repeat's paths, within-chain ACF, and per-repeat diagnostics to inspect; switching it does not rerun sampling or change the grade. The banner lists every repeat's SWD. A visually good seed can have SWD below the threshold while the setting still fails on another seed. Compare the same displayed base seed when collecting before/after screenshots.
 
             Inspect all paths and traces before looking at SWD. Several short chains that remain in the same mode are not equivalent to genuine global exploration.
             """,
             "interactive",
         )
     )
-    cells.append(code("lab = build_sampling_lab()\ndisplay(lab.ui)", "interactive"))
+    cells.append(code(
+        """
+        # Dispose the previous widget when this cell is rerun.
+        if "lab" in globals():
+            if hasattr(lab, "close"):
+                lab.close()
+            else:  # compatibility with a lab created before this update
+                lab.run_button.on_click(lab._on_click, remove=True)
+                lab.output.close()
+                lab.ui.close()
+        lab = build_sampling_lab()
+        display(lab.ui)
+        """, "interactive",
+    ))
 
     cells.append(
         markdown(
@@ -349,7 +364,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             Record a justified choice for every row below. RWMH uses `scale = sigma`; ULA/MALA use `scale = eta`; HMC uses `scale = epsilon` plus `n_leapfrog = L`. The supplied values are starting guesses, not optimized answers. Keep a search log containing at least three distinct candidate configurations per row (at least 36 entries in total); report failures as well as improvements. You may search manually or with your own script.
 
-            For each candidate, record target, method, scale, $L$ if applicable, $C$, burn-in, and the measured SWD. Mark whether a score is from the lab's single base seed or from the three-repeat benchmark. Fully benchmark at least your two strongest candidates per row and report their worst-repeat SWD before selecting your final configuration. Changing a parameter is not mandatory when your experiments justify retaining its value.
+            For each candidate, record target, method, scale, $L$ if applicable, $C$, burn-in, and worst-repeat SWD. Every lab Start now performs the same three-repeat evaluation as the final benchmark. Compare at least your two strongest candidates per row before selecting your final configuration, and retain the per-repeat scores to show robustness. Do not substitute the displayed paths' single-repeat SWD for the grading metric. Changing a parameter is not mandatory when your experiments justify retaining its value.
 
             For every row, choose `scale`, `n_chains`, and `burn_fraction`; HMC rows additionally choose `n_leapfrog`. Choose them separately for all three targets. Do not change the official 40,000-evaluation budget, benchmark base seeds `(11, 23, 47)`, initial states, accounting rule, or SWD thresholds. The table gives each row a direct **PASS / TUNE MORE** status. The plot shows whether worst-repeat SWD approaches and crosses the dashed requirement as the shared evaluation budget is spent. Curves need not decrease monotonically.
 
@@ -403,7 +418,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             Complete all six investigations. The goal is to explain observed trade-offs using evidence, not just find settings that pass. Unless an investigation says otherwise, change **one parameter at a time** and keep the method, target, initial state, base seed 11, $C$, burn-in, and total budget fixed. The automatically derived chain length may change; record it. Use the same target-specific axes when comparing plots.
 
-            For every investigation, include a compact results table and a 100–200 word explanation connecting **parameter change → observed behaviour → measured effect**. The table should identify every setting and include SWD, ESS/1k, acceptance (N/A for ULA), states per chain, and retained states. For mixtures, also report mode-mass error and within-chain switches. Add a divergence flag; do not omit failed runs or replace them with successful seeds. Describe results that contradict your initial prediction rather than forcing an expected pattern.
+            For every investigation, include a compact results table and a 100–200 word explanation connecting **parameter change → observed behaviour → measured effect**. The table should identify every setting and include worst-repeat SWD, plus the displayed repeat's SWD, ESS/1k, acceptance (N/A for ULA), states per chain, and retained states. Label its base seed. For mixtures, also report mode-mass error and within-chain switches. Add a divergence flag; do not omit failed runs or replace them with successful seeds. Describe results that contradict your initial prediction rather than forcing an expected pattern.
 
             **Screenshot requirement:** capture your own lab dashboard **and its metric table**, with the target, method, full settings, and budget visible or stated in the caption. Save each contrasting run before pressing Start again, because the lab replaces the previous output. Insert labelled before/after or small/large screenshots beneath the corresponding answer, with at least the evidence specified below. Several captures may be assembled into one readable comparison panel. Screenshots must show completed runs and readable axis labels and numbers.
 
@@ -503,7 +518,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             Explain when discarding more states improves accuracy and when it loses useful information. Does extra burn-in resolve a missing mode or ULA's finite-step bias? If your two cases behave similarly, say so and support that conclusion rather than inventing a contrast.
 
-            **Evidence:** screenshot low versus high burn-in for both pairs (four captures). Then include your final **12/12 PASS** benchmark table and SWD-versus-budget figure, with your completed search log from Section 6. Discuss at least one setting that looked attractive in the lab but was worse across the benchmark repeats; if none did, compare the measured gaps for your two strongest candidates. Explain why these finite-run pass marks do not prove convergence or universal superiority of a method.
+            **Evidence:** screenshot low versus high burn-in for both pairs (four captures). Then include your final **12/12 PASS** benchmark table and SWD-versus-budget figure, with your completed search log from Section 6. Discuss at least one setting that looked attractive on one repeat but was worse on another; use View traces to inspect both. If none did, compare the measured gaps for your two strongest candidates. Explain why these finite-run pass marks do not prove convergence or universal superiority of a method.
 
             **Your results table, screenshots with captions, and explanation:** _replace this text._
             """,
