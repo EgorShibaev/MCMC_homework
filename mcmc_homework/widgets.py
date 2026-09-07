@@ -23,7 +23,7 @@ from .experiments import (
 )
 from .targets import TARGETS
 from .samplers import states_for_target_evals
-from .visualization import metrics_html, plot_ensemble_sampling_run
+from .visualization import seed_diagnostics_html, plot_ensemble_sampling_run
 
 
 class SamplingLab:
@@ -250,16 +250,14 @@ class SamplingLab:
         status = "GUIDED CASE" if threshold is None else (
             "PASS" if benchmark_passed(ensemble.target_key, summary) else "TUNE MORE"
         )
-        per_seed = "; ".join(
-            f"seed {e.base_seed}: {e.metrics['swd']:.4f}" for e in self.last_ensembles
-        )
         limit = "" if threshold is None else f"; required ≤ {threshold:.3f}"
         self.result_status.value = (
             f"<b>Last evaluated setting — {status}</b>: "
             f"worst-repeat SWD = {summary['worst_swd']:.4f}{limit}.<br>"
-            f"{escape(per_seed)}. All three repeats determine the result; "
-            "View traces only selects which paths to display."
+            f"3 seeds · mean ± SD: {summary['mean_swd']:.4f} ± {summary['sd_swd']:.4f}"
         )
+        if summary["divergent_runs"]:
+            self.result_status.value += f" · divergent repeats: {int(summary['divergent_runs'])}"
         # Set serialized output data directly. Output context managers capture
         # kernel display messages, which can be duplicated by multiple frontend
         # views/hooks. No display() or inline-backend auto-display is needed here.
@@ -275,8 +273,7 @@ class SamplingLab:
             f"seed {e.base_seed}: {chain.result.message}"
             for e in self.last_ensembles for chain in e.chains if chain.result.message
         ]
-        table = f"<p><b>Diagnostics for displayed base seed {ensemble.base_seed}</b></p>"
-        table += metrics_html(ensemble, summary)
+        table = seed_diagnostics_html(ensemble)
         if messages:
             table += f"<p style='color:#b00020'><b>Warning:</b> {escape(' | '.join(messages))}</p>"
         self.output.outputs = (

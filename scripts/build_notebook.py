@@ -289,7 +289,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             **Read the PASS / TUNE MORE banner, not just the SWD of the displayed paths.** Start always evaluates base seeds 11, 23, and 47 and grades their worst SWD, exactly like the final benchmark. The accuracy curve also shows the worst-repeat score. Three repeats test robustness to randomness; they are not extra student-selected chains and their samples are not pooled across repeats.
 
-            The dashboard appears once. **View traces** selects which repeat's paths, within-chain ACF, and per-repeat diagnostics to inspect; switching it does not rerun sampling or change the grade. The banner lists every repeat's SWD. A visually good seed can have SWD below the threshold while the setting still fails on another seed. Compare the same displayed base seed when collecting before/after screenshots.
+            The dashboard appears once. **View traces** selects which repeat's paths, within-chain ACF, and diagnostics to inspect; switching it does not rerun sampling or change the grade. The banner summarizes all three seeds; the compact table below the plot contains **only the selected seed's diagnostics**. Settings and state counts appear only in the controls above. A visually good seed can have SWD below the threshold while the setting still fails on another seed. Compare the same displayed base seed when collecting before/after screenshots.
 
             Inspect all paths and traces before looking at SWD. Several short chains that remain in the same mode are not equivalent to genuine global exploration.
             """,

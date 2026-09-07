@@ -31,6 +31,19 @@ class WidgetTests(unittest.TestCase):
         self.assertIn("text/html", lab.output.outputs[1]["data"])
         # Viewing another repeat must not sample, change the score, or append.
         with patch.object(lab, "run", side_effect=AssertionError("Unexpected resampling")):
+            lab.view_seed.value = 23
+            html = lab.output.outputs[1]["data"]["text/html"]
+            self.assertIn("Seed 23 diagnostics", html)
+            self.assertIn(f"{lab.last_ensemble.metrics['swd']:.4f}", html)
+            for repeated in (
+                "All repeats", "mean ± SD", "worst SWD", "Official", "Student-selected",
+                "states", "budget", "burn-in", "noise floor",
+            ):
+                self.assertNotIn(repeated, html)
+            self.assertEqual(html.count("<tr>"), 1 + 4 + len(lab.last_ensemble.metrics["task"]))
+            self.assertIn("max-width:620px", html)
+            self.assertIn("text-align:left", html)
+            self.assertIn("mean ± SD", lab.result_status.value)
             lab.view_seed.value = 47
         self.assertEqual(lab.last_ensemble.base_seed, 47)
         self.assertEqual(len(lab.output.outputs), 2)

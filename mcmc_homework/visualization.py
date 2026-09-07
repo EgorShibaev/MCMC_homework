@@ -317,21 +317,21 @@ def plot_ensemble_sampling_run(
     score = ensemble.metrics["swd"]
     score_text = "∞" if not np.isfinite(score) else f"{score:.3f}"
     subtitle = f"Displayed paths: base seed {ensemble.base_seed}; this repeat's SWD={score_text}"
-    if benchmark_curve is not None:
-        worst = benchmark_curve["worst_swd"][-1]
-        worst_text = "∞" if not np.isfinite(worst) else f"{worst:.4f}"
-        subtitle = (
-            f"Official worst-repeat SWD={worst_text} | "
-            f"displayed paths: seed {ensemble.base_seed} (SWD={score_text})"
-        )
     integrator = f", L={ensemble.n_leapfrog}" if ensemble.method == "HMC" else ""
-    figure.suptitle(
+    title = (
         f"{target.name} — {ensemble.method} | scale={ensemble.scale:.4g}{integrator}, "
         f"C={ensemble.n_chains}, burn={100.0 * ensemble.burn_fraction:.0f}%, "
         f"budget/repeat={ensemble.target_eval_budget:,}\n"
-        f"{subtitle}",
-        fontsize=11,
+        f"{subtitle}"
     )
+    if benchmark_curve is not None:
+        # In the lab, settings are already visible in the controls and scores in
+        # the result banner/table. The figure only needs to identify its scope.
+        title = (
+            f"{target.name} — {ensemble.method}\n"
+            f"Paths and ACF: seed {ensemble.base_seed} | SWD curve: all 3 seeds"
+        )
+    figure.suptitle(title, fontsize=11)
     figure.tight_layout(rect=(0, 0, 1, 0.95))
     return figure
 
@@ -462,6 +462,43 @@ def _format_number(value: Any, digits: int = 3) -> str:
     return f"{number:.{digits}f}"
 
 
+def _metric_table_html(rows: Sequence[tuple[str, str]], caption: str = "") -> str:
+    """Bound the table width and override notebook themes' cell alignment."""
+    cell_style = "padding:6px 10px;border-bottom:1px solid #ddd;"
+    body = "".join(
+        f"<tr><td style='{cell_style}text-align:left'>{escape(label)}</td>"
+        f"<td style='{cell_style}text-align:right;font-variant-numeric:tabular-nums'>"
+        f"<b>{escape(value)}</b></td></tr>"
+        for label, value in rows
+    )
+    caption_html = (
+        f"<caption style='text-align:left;font-weight:600;padding:8px 10px'>"
+        f"{escape(caption)}</caption>" if caption else ""
+    )
+    return (
+        "<table style='border-collapse:collapse;width:100%;max-width:620px;"
+        "margin:0;font-size:0.95em;table-layout:fixed'>"
+        f"{caption_html}"
+        f"<thead><tr><th style='{cell_style}text-align:left;width:70%'>Metric</th>"
+        f"<th style='{cell_style}text-align:right'>Value</th></tr></thead>"
+        f"<tbody>{body}</tbody></table>"
+    )
+
+
+def seed_diagnostics_html(ensemble: EnsembleExperiment) -> str:
+    """Selected-repeat results only; settings and benchmark summary live above."""
+    metrics = ensemble.metrics
+    acceptance = metrics["acceptance_rate"]
+    rows = [
+        ("SWD", _format_number(metrics["swd"], 4)),
+        ("Effective sample size (minimum)", _format_number(metrics["ess_min"], 1)),
+        ("ESS / 1,000 evaluations", _format_number(metrics["ess_per_1000_evals"], 1)),
+        ("Acceptance", "N/A" if acceptance is None else f"{100.0 * acceptance:.1f}%"),
+    ]
+    rows.extend((label.capitalize(), _format_number(value)) for label, value in metrics["task"].items())
+    return _metric_table_html(rows, caption=f"Seed {ensemble.base_seed} diagnostics")
+
+
 def metrics_html(
     experiment: Experiment | EnsembleExperiment,
     summary: Mapping[str, float] | None = None,
@@ -539,16 +576,7 @@ def metrics_html(
             ("All repeats: worst SWD", _format_number(summary["worst_swd"])),
             ("All repeats: divergent runs", str(int(summary["divergent_runs"]))),
         ]
-    body = "".join(
-        f"<tr><td>{escape(label)}</td><td><b>{escape(value)}</b></td></tr>"
-        for label, value in rows
-    )
-    return (
-        "<table style='border-collapse:collapse;width:100%;font-size:0.92em'>"
-        "<thead><tr><th style='text-align:left'>Metric</th><th style='text-align:left'>Value</th>"
-        "</tr></thead>"
-        f"<tbody>{body}</tbody></table>"
-    )
+    return _metric_table_html(rows)
 
 
 def benchmark_results_html(results: Sequence[BenchmarkResult]) -> str:

@@ -57,6 +57,8 @@ The View traces selector only changes which repeat's paths and diagnostics are
 shown; it does not rerun sampling or change the grade. A low single-repeat SWD
 is not a benchmark pass. The dashboard and metric table are replaced on every
 click, not appended.
+The banner summarizes the three repeats; the compact diagnostics table contains
+only the selected seed's results. Settings and state counts stay in the controls.
 
 ## Required experimental analysis
 
