@@ -6,7 +6,10 @@ from unittest.mock import patch
 import matplotlib.pyplot as plt
 from IPython.utils.capture import capture_output
 
-from mcmc_homework import BENCHMARK_SEEDS, DEFAULT_SETTINGS, benchmark_passed, build_sampling_lab
+from mcmc_homework import (
+    BENCHMARK_SEEDS, DEFAULT_SETTINGS, SWD_PASS_THRESHOLDS,
+    benchmark_passed, build_sampling_lab,
+)
 
 
 class WidgetTests(unittest.TestCase):
@@ -41,6 +44,10 @@ class WidgetTests(unittest.TestCase):
         self.assertEqual(other_lab.scale.value, .12)  # caches are per lab instance
 
     def test_reported_c1_setting_is_not_a_benchmark_pass_or_duplicate_output(self) -> None:
+        # Test worst-seed grading independently of the calibrated production limit.
+        limits = patch.dict(SWD_PASS_THRESHOLDS, {("gaussian", "RWMH"): .06})
+        limits.start()
+        self.addCleanup(limits.stop)
         lab = build_sampling_lab()
         self.addCleanup(lab.close)
         lab.n_chains.value = 1

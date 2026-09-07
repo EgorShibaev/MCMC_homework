@@ -47,11 +47,14 @@ adjacent plot tracks worst-repeat SWD against the cumulative target-evaluation
 budget. Each method's dashed threshold matches its curve colour and is stated
 in the legend.
 
-Limits are calibrated with a broad hyperparameter search and local refinement
-on the official seeds. Each limit leaves a margin over the best result and
-admits at least five distinct tested trajectory configurations. Three additional
-seeds check sensitivity; their results do not inflate the grading limits. This
-is an empirical finite-budget requirement, not a guarantee for every future seed.
+Limits use 100 fresh calibration seeds for each chosen setting and its nearest
+slider value: 10% above the largest calibration/official SWD, rounded upward to
+0.005 without lowering previous limits. Another 50 seeds per setting are held
+out, not used to choose limits: 1,597/1,600 exact/slider runs passed (three
+Gaussian MALA failures). The audit has 4,800 fresh-seed runs in total. These
+are empirical finite-budget limits, not guarantees; grading still uses only
+the three official seeds. Under these limits, 11/16 starting configurations
+already pass; the experimental analysis remains required.
 The 10:90 mixture also has pair-specific limits for optional lab exploration;
 it remains outside the 12 required core benchmark rows.
 
@@ -93,6 +96,9 @@ The notebook replaces Tasks A–D with six controlled investigations:
 
 For each investigation, students submit a results table, a short explanation,
 and their own labelled screenshots of contrasting lab runs and their metrics.
+Section 5 contains five rare-mode experiment questions using the lab, with no
+worked Python demo. The six investigations use short question lists and shared
+reporting instructions.
 The notebook specifies which comparisons to capture. Screenshots must be
 embedded as notebook attachments or included in a portable `screenshots/`
 directory. The final submission also includes the 12/12 PASS benchmark table

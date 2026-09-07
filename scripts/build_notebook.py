@@ -161,7 +161,7 @@ def build_notebook() -> nbf.NotebookNode:
             | 65:35 mixture | __MIXTURE_SWD__ |
             | 10:90 mixture (optional) | __IMBALANCED_SWD__ |
 
-            These limits are calibrated separately for each method and distribution using a broad fixed-budget search on the official seeds, with headroom and at least five tested configurations passing each pair. Additional seeds check sensitivity but do not change the grading rule. Different methods have different attainable finite-budget accuracy. The 10:90 limits provide optional tuning targets; its guided case study remains separate from the 12 required core rows.
+            **Calibration:** chosen settings and their nearest slider values were tested on 100 fresh seeds per pair; limits use the largest calibration/official SWD plus 10%, rounded up to 0.005 without lowering previous limits. Another 50 seeds were held out: 1,597/1,600 exact/slider runs passed (three Gaussian MALA failures). A PASS is not proof of convergence. **Grading still uses only seeds `(11, 23, 47)`.** The 10:90 row is optional.
 
             The numerical requirement is **PASS on all 12 core target–method rows**. Completing the homework also requires the six controlled investigations below, including your own screenshots and explanations. A passing table alone is not a complete submission. Every row receives the same total budget of **40,000 target evaluations per benchmark ensemble**, including burn-in and divided across all student-selected chains. One call to $\log\pi$ and one call to $\nabla\log\pi$ each count as one evaluation. Reference sampling, plotting, and metric calculations do not consume this sampling budget.
 
@@ -233,7 +233,6 @@ def build_notebook() -> nbf.NotebookNode:
                 build_sampling_lab,
                 gradient_check_report,
                 metrics_html,
-                plot_mode_ratio_comparison,
                 plot_sampling_run,
                 plot_swd_convergence,
                 run_experiment,
@@ -324,45 +323,19 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ## 5. Guided case study: a rare 10% mode
+            ## 5. Rare-mode experiments
 
-            Both Gaussian components have unit covariance, but the left component has probability 0.10 and the right component 0.90. Both chains start in the dominant right mode and receive the same number of transitions.
+            In the lab, select the **10:90 mixture** and compare ULA with HMC at the fixed evaluation budget. Use your own runs and labelled screenshots to answer:
 
-            The ULA setting below is deliberately local: in this finite run it never represents the rare mode. HMC refreshes momentum, integrates longer trajectories, crosses the density barrier repeatedly, and approaches the target ratio. This illustrates a specific geometry/budget/tuning combination—not a theorem that all Langevin samplers always fail on mixtures.
+            1. What left:right proportions do you obtain, compared with 10:90?
+            2. Can a plausible-looking cloud still have large SWD? Why?
+            3. How many mode switches occur? Why is one switch weak evidence of mixing?
+            4. Increase ULA's step: how do mode discovery, SWD, and finite-step bias change?
+            5. Reduce HMC's $L$ at fixed $\epsilon$: how does rare-mode discovery change?
+
+            **Your experiments and answers:** _replace this text._
             """,
             "case-study",
-        )
-    )
-    cells.append(
-        code(
-            """
-            rare_mode_ula = run_experiment(
-                "imbalanced_mixture", "ULA", scale=0.002,
-                n_steps=6000, burn_fraction=0.20, seed=47,
-            )
-            rare_mode_hmc = run_experiment(
-                "imbalanced_mixture", "HMC", scale=0.12,
-                n_steps=6000, burn_fraction=0.20, seed=47, n_leapfrog=20,
-            )
-            plot_mode_ratio_comparison(rare_mode_ula, rare_mode_hmc)
-            plt.show()
-            """,
-            "case-study",
-        )
-    )
-    cells.append(
-        markdown(
-            r"""
-            **Case-study questions**
-
-            1. Report the final left:right proportions for ULA and HMC.
-            2. Why can a sampler produce a visually plausible cloud in the right mode while still having a large distributional error?
-            3. Compare the number of mode switches. Why is one transition weaker evidence than many transitions?
-            4. Increase ULA's step. Can it cross? If so, what happens to SWD and finite-step bias?
-            5. Reduce HMC's $L$ while keeping $\epsilon$ fixed. When does rare-mode discovery degrade?
-
-            **Your answer:** _replace this text._
-            """,
             "student-answer",
         )
     )
@@ -424,15 +397,15 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ## 7. Controlled investigations: explain what the hyperparameters do
+            ## 7. Controlled investigations
 
-            Complete all six investigations. The goal is to explain observed trade-offs using evidence, not just find settings that pass. Unless an investigation says otherwise, change **one parameter at a time** and keep the method, target, initial state, base seed 11, $C$, burn-in, and total budget fixed. The automatically derived chain length may change; record it. Use the same target-specific axes when comparing plots.
+            Complete all six. Change **one parameter at a time**; keep other settings, initial states, and budget fixed. Use **View traces: seed 11** for comparisons.
 
-            For every investigation, include a compact results table and a 100–200 word explanation connecting **parameter change → observed behaviour → measured effect**. The table should identify every setting and include worst-repeat SWD, plus the displayed repeat's SWD, ESS/1k, acceptance (N/A for ULA), states per chain, and retained states. Label its base seed. For mixtures, also report mode-mass error and within-chain switches. Add a divergence flag; do not omit failed runs or replace them with successful seeds. Describe results that contradict your initial prediction rather than forcing an expected pattern.
+            For each investigation submit:
 
-            **Screenshot requirement:** capture your own lab dashboard **and its metric table**, with the target, method, full settings, and budget visible or stated in the caption. Save each contrasting run before pressing Start again, because the lab replaces the previous output. Insert labelled before/after or small/large screenshots beneath the corresponding answer, with at least the evidence specified below. Several captures may be assembled into one readable comparison panel. Screenshots must show completed runs and readable axis labels and numbers.
-
-            In a Markdown answer cell, paste images as notebook attachments, or link to included files, for example `![RWMH: small proposal](screenshots/investigation-1-small.png)`. If using linked files, submit the `screenshots/` directory alongside the notebook; local absolute paths will not work on another computer. Synthetic diagrams and copies of the supplied demo are not substitutes for your experiment screenshots.
+            - A table of all runs: settings, worst-repeat SWD, displayed-seed SWD, ESS/1k, acceptance, states/retained states per chain, and failures. For mixtures, add mode-mass error and switches.
+            - Brief answers to the questions; explain unexpected results too.
+            - The requested screenshots of **your lab plots and metrics**, captioned with settings and seed. Save each before rerunning; use matching axes. Embed images or include a portable `screenshots/` folder.
             """,
             "assignment",
         )
@@ -440,15 +413,17 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ### Investigation 1 — RWMH: acceptance versus movement
+            ### Investigation 1 — RWMH: proposal scale
 
-            On both the tilted Gaussian and the 65:35 mixture, test at least three proposal scales $\sigma$: small, intermediate, and large. Keep $C$ and burn-in fixed within each target. Choose a range wide enough to reveal different behaviour, then refine it if necessary.
+            On the **Gaussian and 65:35 mixture**, test small, medium, and large $\sigma$.
 
-            Explain how acceptance, repeated states, distance travelled, and autocorrelation change. Can very high acceptance coexist with poor SWD or ESS? Why does a scale that traverses the Gaussian's long axis also cause rejection across its narrow axis? On the mixture, does a larger proposal discover the other mode more often, and at what cost?
+            1. How do acceptance, repeated states, movement, and ACF change? Can high acceptance coexist with poor SWD or ESS?
+            2. How do the Gaussian's long and narrow axes affect proposals and rejections?
+            3. Does larger $\sigma$ improve mode discovery? At what cost? Which scale works best for each target?
 
-            **Evidence:** screenshot the small- and large-scale runs on each target (four captures, which may be arranged into two panels). Include all six or more runs in your results table. Explain your preferred compromise for each geometry.
+            **Screenshots:** small/large $\sigma$ on both targets (4).
 
-            **Your results table, screenshots with captions, and explanation:** _replace this text._
+            **Results and answers:** _replace this text._
             """,
             "student-answer",
         )
@@ -456,15 +431,17 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ### Investigation 2 — ULA: slow exploration, discretization bias, and instability
+            ### Investigation 2 — ULA: step size
 
-            On the Gaussian and banana targets, compare a small, intermediate, and large step $\eta$, keeping $C$ and burn-in fixed. Look for a stable but slowly exploring run, a useful compromise, and a large-step run with distorted shape or divergence. If a run diverges, record that outcome and try a nearby smaller step to examine the stable regime.
+            On the **Gaussian and banana**, test small, medium, and large $\eta$. Record divergence; if it occurs, also try a nearby smaller step.
 
-            Use traces and ACF to discuss mixing, and covariance error (Gaussian) or residual-scale error (banana) to discuss shape. Why can a step with larger ESS still have worse SWD? Explain the simultaneous changes in gradient drift and noise amplitude $\sqrt{2\eta}$. For the Gaussian, derive $\eta<2\lambda_{\min}(\Sigma)$ from the linear update and relate this stability condition to your observations. Stability alone does not imply accurate sampling. Do not attribute every single-run error to discretization bias; state what your evidence can distinguish from finite-sample error.
+            1. How do drift, noise $\sqrt{2\eta}$, traces, and ACF change?
+            2. Can ESS improve while SWD worsens? Use covariance/residual-scale error to assess shape. Can your evidence separate bias from finite-sample error?
+            3. Derive the Gaussian stability condition $\eta<2\lambda_{\min}(\Sigma)$. Does stability ensure accuracy? Compare with your runs.
 
-            **Evidence:** screenshot the small- and large-step runs on each target (four captures). If the large step diverges, include the warning. Include the intermediate settings in the results table.
+            **Screenshots:** small/large $\eta$ on both targets (4), including any divergence warning.
 
-            **Your results table, screenshots with captions, and explanation:** _replace this text._
+            **Results and answers:** _replace this text._
             """,
             "student-answer",
         )
@@ -472,15 +449,17 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ### Investigation 3 — MALA: what the Metropolis correction changes
+            ### Investigation 3 — MALA: Metropolis correction
 
-            On the banana, run ULA and MALA at the same three step sizes: small, intermediate, and aggressive. Hold $C$, burn-in, and the 40,000-evaluation budget fixed. You may reuse ULA runs from Investigation 2 if their settings match exactly.
+            On the **banana**, compare ULA and MALA at the same small, medium, and aggressive $\eta$ (6 runs). Matching earlier ULA runs may be reused.
 
-            Explain why the two methods share a proposal but can produce different retained clouds and traces. What happens to MALA acceptance and repeated states as $\eta$ increases? Does correction automatically imply good finite-budget sampling? Compare the automatically allocated states per chain: MALA uses both density and gradient calls. Discuss accuracy and efficiency together when choosing between the two methods.
+            1. Why do identical proposals produce different clouds and traces? How do MALA acceptance and repeated states change with $\eta$?
+            2. Does correction guarantee good finite-budget sampling? Compare SWD, ESS/1k, and states per chain, accounting for density/gradient costs.
+            3. Where does correction matter most? Which method/step offers the better trade-off?
 
-            **Evidence:** place screenshots of ULA and MALA at the same aggressive step side by side (two captures). Report all six combinations in the table and identify the scale at which correction most visibly changes behaviour.
+            **Screenshots:** ULA/MALA at the same aggressive step, side by side (2).
 
-            **Your results table, screenshots with captions, and explanation:** _replace this text._
+            **Results and answers:** _replace this text._
             """,
             "student-answer",
         )
@@ -488,17 +467,17 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ### Investigation 4 — HMC: short versus long trajectories
+            ### Investigation 4 — HMC: trajectory length and step size
 
-            On both the banana and the 65:35 mixture, compare a small $L$ (1–3), an intermediate $L$ (8–15), and a large $L$ (25–40). Keep $\epsilon$, $C$, and burn-in fixed within each target. These ranges define contrasts, not recommended optima. Record trajectory duration $T=\epsilon L$, states per chain, acceptance, SWD, and ESS/1k.
+            On the **banana and 65:35 mixture**, compare $L$ in 1–3, 8–15, and 25–40 at fixed $\epsilon$. Record $T=\epsilon L$. On one target, also compare small/large $\epsilon$ at fixed $L$.
 
-            Explain whether longer trajectories travel farther or switch modes more often, and whether that benefit compensates for fewer proposals under the fixed budget. Do you observe wasted travel, rejection, or a trajectory returning near its starting point? Increasing $L$ is not guaranteed to help: explain your actual observations on both geometries.
+            1. Do longer trajectories improve travel or mode switching enough to offset fewer proposals? Observe rejection or returns near the starting point?
+            2. How does changing $\epsilon$ differ from changing $L$? Distinguish leapfrog steps from retained chain states.
+            3. Which $(\epsilon,L)$ best balances SWD, acceptance, and ESS/1k?
 
-            Next, on one of those targets, hold $L$, $C$, and burn-in fixed and compare small versus large $\epsilon$. Explain how changing integration accuracy differs from changing $L$. Distinguish leapfrog steps inside a proposal from retained MCMC states.
+            **Screenshots:** low/high $L$ on both targets (4), plus small/large $\epsilon$ (2).
 
-            **Evidence:** screenshot low and high $L$ on each target (four captures), plus the small/large $\epsilon$ comparison (two captures). Record intermediate runs in the table. Justify your final $(\epsilon,L)$ jointly.
-
-            **Your results table, screenshots with captions, and explanation:** _replace this text._
+            **Results and answers:** _replace this text._
             """,
             "student-answer",
         )
@@ -506,15 +485,17 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ### Investigation 5 — Chain count: independent restarts versus chain length
+            ### Investigation 5 — Number of chains
 
-            Compare $C=1,2,4,8$ for ULA and HMC on both the Gaussian and the 65:35 mixture. For each target–method pair, hold scale, $L$ where applicable, and burn-in fixed. The total budget remains 40,000 across all chains. List states and retained states per chain as $C$ changes.
+            Compare $C=1,2,4,8$ for **ULA and HMC** on the **Gaussian and 65:35 mixture**. Keep scale, $L$, and burn-in fixed; record all 16 runs.
 
-            Explain how independent restarts and shorter within-chain exploration compete. At a fixed burn-in fraction, the total fraction of work discarded is approximately unchanged; the difficulty is that each shorter chain must still escape its initial transient. All chains start from the same supplied point: why can many trapped chains still miss a mixture mode? Compare pooled SWD with the individual traces and mode switches. Use the three benchmark base seeds to check whether the apparent benefit of your preferred $C$ survives repetition.
+            1. How do shorter chains trade off against independent restarts? Compare retained lengths and initialization effects at fixed burn-in fraction.
+            2. Why might many chains starting at the same point still miss a mode? Compare pooled SWD, individual traces, and switches.
+            3. Does your preferred $C$ work across all three benchmark seeds? How does it depend on method and target?
 
-            **Evidence:** screenshot $C=1$ and $C=8$ for at least two contrasting target–method pairs (four captures, showing all chain traces). Include the full four-pair sweep in the table and explain any differences between methods or geometries.
+            **Screenshots:** $C=1$ versus $C=8$ for two contrasting pairs, including all traces (4).
 
-            **Your results table, screenshots with captions, and explanation:** _replace this text._
+            **Results and answers:** _replace this text._
             """,
             "student-answer",
         )
@@ -522,15 +503,17 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ### Investigation 6 — Burn-in and the reliability of your final choice
+            ### Investigation 6 — Burn-in and seed sensitivity
 
-            Choose two contrasting target–method pairs from your earlier experiments. For each, compare 5%, 20%, and 40% burn-in while keeping every other setting fixed. With the same base seed the generated paths should be identical: only the portion retained for scoring changes. Report retained counts, SWD, ESS/1k, and any initial transient visible in the traces.
+            For **two contrasting target–method pairs**, compare 5%, 20%, and 40% burn-in with everything else fixed.
 
-            Explain when discarding more states improves accuracy and when it loses useful information. Does extra burn-in resolve a missing mode or ULA's finite-step bias? If your two cases behave similarly, say so and support that conclusion rather than inventing a contrast.
+            1. Why should the paths stay identical? How do retained counts, SWD, and ESS/1k change?
+            2. When does discarding states help or waste information? Can it fix a missing mode or ULA bias?
+            3. Does a promising setting perform worse on another seed? Inspect both with **View traces**; if not, compare your two best candidates. Why does PASS not prove convergence or method superiority?
 
-            **Evidence:** screenshot low versus high burn-in for both pairs (four captures). Then include your final **12/12 PASS** benchmark table and SWD-versus-budget figure, with your completed search log from Section 6. Discuss at least one setting that looked attractive on one repeat but was worse on another; use View traces to inspect both. If none did, compare the measured gaps for your two strongest candidates. Explain why these finite-run pass marks do not prove convergence or universal superiority of a method.
+            **Screenshots:** low/high burn-in for both pairs (4). Include your final **12/12 PASS** table, SWD-budget plot, and Section 6 search log.
 
-            **Your results table, screenshots with captions, and explanation:** _replace this text._
+            **Results and answers:** _replace this text._
             """,
             "student-answer",
         )

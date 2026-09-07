@@ -30,29 +30,30 @@ MAX_STUDENT_CHAINS = 8
 
 # A row passes only when its *worst* benchmark-ensemble SWD is at or below the
 # target-method-specific threshold and none of the ensembles diverged. Limits
-# use a broad search plus local refinement at 40,000 evaluations per ensemble.
-# Each admits at least five tested trajectory configurations. Additional seeds
-# check sensitivity but do not inflate the grading limits. The 10:90 case is optional.
-# They are attainable by every method, but
-# the deliberately untuned defaults do not all pass. Passing the numerical gate
-# does not replace the notebook's controlled investigations and evidence.
+# use 100 fresh calibration seeds per chosen setting and its nearest slider
+# value, at 40,000 evaluations per ensemble. Add 10% to the calibration/official
+# maximum and round upward to 0.005, never lowering prior limits. Another 50
+# seeds per setting are held out for validation, not used to select the limits.
+# The 10:90 case is optional; grading still uses the three official seeds.
+# Some starting settings now pass. Passing the numerical gate does not replace
+# the notebook's controlled investigations and evidence.
 SWD_PASS_THRESHOLDS: dict[tuple[str, str], float] = {
-    ("gaussian", "RWMH"): 0.035,
-    ("gaussian", "ULA"): 0.06,
-    ("gaussian", "MALA"): 0.055,
-    ("gaussian", "HMC"): 0.030,
-    ("banana", "RWMH"): 0.045,
-    ("banana", "ULA"): 0.135,
-    ("banana", "MALA"): 0.090,
-    ("banana", "HMC"): 0.045,
-    ("mixture", "RWMH"): 0.030,
-    ("mixture", "ULA"): 0.065,
-    ("mixture", "MALA"): 0.055,
-    ("mixture", "HMC"): 0.060,
-    ("imbalanced_mixture", "RWMH"): 0.025,
-    ("imbalanced_mixture", "ULA"): 0.030,
-    ("imbalanced_mixture", "MALA"): 0.035,
-    ("imbalanced_mixture", "HMC"): 0.035,
+    ("gaussian", "RWMH"): 0.125,
+    ("gaussian", "ULA"): 0.305,
+    ("gaussian", "MALA"): 0.280,
+    ("gaussian", "HMC"): 0.105,
+    ("banana", "RWMH"): 0.205,
+    ("banana", "ULA"): 0.450,
+    ("banana", "MALA"): 1.200,
+    ("banana", "HMC"): 0.115,
+    ("mixture", "RWMH"): 0.125,
+    ("mixture", "ULA"): 0.830,
+    ("mixture", "MALA"): 0.285,
+    ("mixture", "HMC"): 0.645,
+    ("imbalanced_mixture", "RWMH"): 0.125,
+    ("imbalanced_mixture", "ULA"): 0.235,
+    ("imbalanced_mixture", "MALA"): 0.340,
+    ("imbalanced_mixture", "HMC"): 0.115,
 }
 
 
