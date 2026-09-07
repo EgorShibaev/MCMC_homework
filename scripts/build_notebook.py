@@ -7,11 +7,15 @@ from textwrap import dedent
 
 import nbformat as nbf
 
-from mcmc_homework import SWD_PASS_THRESHOLDS
+from mcmc_homework import METHODS, SWD_PASS_THRESHOLDS
 
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "MCMC_Homework.ipynb"
+
+
+def threshold_cells(target: str) -> str:
+    return " | ".join(f"$\\leq {SWD_PASS_THRESHOLDS[target, method]:g}$" for method in METHODS)
 
 
 def markdown(source: str, *tags: str) -> nbf.NotebookNode:
@@ -148,13 +152,16 @@ def build_notebook() -> nbf.NotebookNode:
 
             ### Explicit pass criterion
 
-            A target–method row passes only when **the worst SWD over benchmark ensembles with base seeds `(11, 23, 47)` is at or below the target threshold** and no ensemble diverges:
+            A target–method row passes only when **the worst SWD over benchmark ensembles with base seeds `(11, 23, 47)` is at or below its pair-specific threshold** and no ensemble diverges:
 
-            | target | required worst-repeat SWD |
-            |---|---:|
-            | tilted Gaussian | $\leq __GAUSSIAN_SWD__$ |
-            | banana | $\leq __BANANA_SWD__$ |
-            | 65:35 mixture | $\leq __MIXTURE_SWD__$ |
+            | target | RWMH | ULA | MALA | HMC |
+            |---|---:|---:|---:|---:|
+            | tilted Gaussian | __GAUSSIAN_SWD__ |
+            | banana | __BANANA_SWD__ |
+            | 65:35 mixture | __MIXTURE_SWD__ |
+            | 10:90 mixture (optional) | __IMBALANCED_SWD__ |
+
+            These limits are calibrated separately for each method and distribution using a broad fixed-budget search on the official seeds, with headroom and at least five tested configurations passing each pair. Additional seeds check sensitivity but do not change the grading rule. Different methods have different attainable finite-budget accuracy. The 10:90 limits provide optional tuning targets; its guided case study remains separate from the 12 required core rows.
 
             The numerical requirement is **PASS on all 12 core target–method rows**. Completing the homework also requires the six controlled investigations below, including your own screenshots and explanations. A passing table alone is not a complete submission. Every row receives the same total budget of **40,000 target evaluations per benchmark ensemble**, including burn-in and divided across all student-selected chains. One call to $\log\pi$ and one call to $\nabla\log\pi$ each count as one evaluation. Reference sampling, plotting, and metric calculations do not consume this sampling budget.
 
@@ -189,9 +196,10 @@ def build_notebook() -> nbf.NotebookNode:
             **Students may not change:** the 40,000-evaluation budget, the three benchmark base seeds, initial states, evaluation accounting, or SWD thresholds.
 
             Burn-in removes an initial transient. It cannot fix discretization bias, mode trapping, or a poorly tuned integrator.
-            """.replace("__GAUSSIAN_SWD__", f"{SWD_PASS_THRESHOLDS['gaussian']:g}")
-            .replace("__BANANA_SWD__", f"{SWD_PASS_THRESHOLDS['banana']:g}")
-            .replace("__MIXTURE_SWD__", f"{SWD_PASS_THRESHOLDS['mixture']:g}"),
+            """.replace("__GAUSSIAN_SWD__", threshold_cells("gaussian"))
+            .replace("__BANANA_SWD__", threshold_cells("banana"))
+            .replace("__MIXTURE_SWD__", threshold_cells("mixture"))
+            .replace("__IMBALANCED_SWD__", threshold_cells("imbalanced_mixture")),
             "theory",
         )
     )
@@ -287,6 +295,8 @@ def build_notebook() -> nbf.NotebookNode:
 
             The lab evaluates one complete official benchmark row. Select a target and method, tune its scale, choose burn-in and the number of chains $C$, and press **Start sampling**. HMC also exposes leapfrog count $L$. Each of the three fixed repeats receives 40,000 target evaluations, shared across its $C$ chains (at most 120,000 calls per click). Changing $C$ or $L$ automatically changes the number of states produced by each chain.
 
+            Settings are remembered per target–method pair during this lab session. Returning to a pair restores your tuning; a newly visited pair inherits the current controls, with scale clipped only if outside the new method's slider range. Switching methods does not automatically retune the scale for you or start sampling.
+
             **Read the PASS / TUNE MORE banner, not just the SWD of the displayed paths.** Start always evaluates base seeds 11, 23, and 47 and grades their worst final SWD, exactly like the final benchmark. The accuracy panel shows a separate curve for each seed. The selected seed has a thick solid line and a “selected” legend label; the other two are thinner dashed lines. Switching **View traces** moves the highlight without changing the curves or the grade. Three repeats test robustness to randomness; they are not extra student-selected chains and their samples are not pooled across repeats.
 
             The dashboard appears once. **View traces** selects which repeat's paths, within-chain ACF, and diagnostics to inspect; switching it does not rerun sampling or change the grade. The banner summarizes all three seeds; the compact table below the plot contains **only the selected seed's diagnostics**. Settings and state counts appear only in the controls above. A visually good seed can have SWD below the threshold while the setting still fails on another seed. Compare the same displayed base seed when collecting before/after screenshots.
@@ -366,7 +376,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             For each candidate, record target, method, scale, $L$ if applicable, $C$, burn-in, and worst-repeat SWD. Every lab Start now performs the same three-repeat evaluation as the final benchmark. Compare at least your two strongest candidates per row before selecting your final configuration, and retain the per-repeat scores to show robustness. Do not substitute the displayed paths' single-repeat SWD for the grading metric. Changing a parameter is not mandatory when your experiments justify retaining its value.
 
-            For every row, choose `scale`, `n_chains`, and `burn_fraction`; HMC rows additionally choose `n_leapfrog`. Choose them separately for all three targets. Do not change the official 40,000-evaluation budget, benchmark base seeds `(11, 23, 47)`, initial states, accounting rule, or SWD thresholds. The table gives each row a direct **PASS / TUNE MORE** status. The plot shows whether worst-repeat SWD approaches and crosses the dashed requirement as the shared evaluation budget is spent. Curves need not decrease monotonically.
+            For every row, choose `scale`, `n_chains`, and `burn_fraction`; HMC rows additionally choose `n_leapfrog`. Choose them separately for all three targets. Do not change the official 40,000-evaluation budget, benchmark base seeds `(11, 23, 47)`, initial states, accounting rule, or SWD thresholds. The table gives each row a direct **PASS / TUNE MORE** status. In the overview plot each method's dashed requirement has the same colour as its curve; the legend states the pair-specific limit. Curves need not decrease monotonically.
 
             To check one candidate across the official repeats without rerunning all 12 rows, call `benchmark_setting(target_key, method, **candidate, seeds=BENCHMARK_SEEDS, target_eval_budget=BENCHMARK_TARGET_EVAL_BUDGET)`. Here `candidate` is a settings dictionary with the same fields as a row of `student_settings`. The returned pair is `(ensembles, summary)`; record `summary["worst_swd"]` in your log.
 

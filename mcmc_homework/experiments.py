@@ -29,15 +29,30 @@ BENCHMARK_TARGET_EVAL_BUDGET = 40_000
 MAX_STUDENT_CHAINS = 8
 
 # A row passes only when its *worst* benchmark-ensemble SWD is at or below the
-# target-specific threshold and none of the ensembles diverged. These thresholds
-# were calibrated with the correct reference implementations at the fixed
-# 40,000-target-evaluation ensemble budget. They are attainable by every method, but
+# target-method-specific threshold and none of the ensembles diverged. Limits
+# use a broad search plus local refinement at 40,000 evaluations per ensemble.
+# Each admits at least five tested trajectory configurations. Additional seeds
+# check sensitivity but do not inflate the grading limits. The 10:90 case is optional.
+# They are attainable by every method, but
 # the deliberately untuned defaults do not all pass. Passing the numerical gate
 # does not replace the notebook's controlled investigations and evidence.
-SWD_PASS_THRESHOLDS: dict[str, float] = {
-    "gaussian": 0.06,
-    "banana": 0.115,
-    "mixture": 0.15,
+SWD_PASS_THRESHOLDS: dict[tuple[str, str], float] = {
+    ("gaussian", "RWMH"): 0.035,
+    ("gaussian", "ULA"): 0.06,
+    ("gaussian", "MALA"): 0.055,
+    ("gaussian", "HMC"): 0.030,
+    ("banana", "RWMH"): 0.045,
+    ("banana", "ULA"): 0.135,
+    ("banana", "MALA"): 0.090,
+    ("banana", "HMC"): 0.045,
+    ("mixture", "RWMH"): 0.030,
+    ("mixture", "ULA"): 0.065,
+    ("mixture", "MALA"): 0.055,
+    ("mixture", "HMC"): 0.060,
+    ("imbalanced_mixture", "RWMH"): 0.025,
+    ("imbalanced_mixture", "ULA"): 0.030,
+    ("imbalanced_mixture", "MALA"): 0.035,
+    ("imbalanced_mixture", "HMC"): 0.035,
 }
 
 
@@ -114,11 +129,11 @@ class BenchmarkResult:
 
     @property
     def threshold(self) -> float:
-        return SWD_PASS_THRESHOLDS[self.target_key]
+        return SWD_PASS_THRESHOLDS[self.target_key, self.method]
 
     @property
     def passed(self) -> bool:
-        return benchmark_passed(self.target_key, self.summary)
+        return benchmark_passed(self.target_key, self.method, self.summary)
 
 
 def run_experiment(
@@ -283,13 +298,14 @@ def benchmark_setting(
     return experiments, summarize_experiments(experiments)
 
 
-def benchmark_passed(target_key: str, summary: Mapping[str, float]) -> bool:
+def benchmark_passed(target_key: str, method: str, summary: Mapping[str, float]) -> bool:
     """Apply the public homework pass rule to one repeated-seed summary."""
 
-    if target_key not in SWD_PASS_THRESHOLDS:
-        raise KeyError(f"No SWD pass threshold is defined for {target_key!r}.")
+    pair = (target_key, method)
+    if pair not in SWD_PASS_THRESHOLDS:
+        raise KeyError(f"No SWD pass threshold is defined for {pair!r}.")
     return bool(
-        summary["worst_swd"] <= SWD_PASS_THRESHOLDS[target_key]
+        summary["worst_swd"] <= SWD_PASS_THRESHOLDS[pair]
         and summary["divergent_runs"] == 0
     )
 

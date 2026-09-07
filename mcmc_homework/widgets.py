@@ -43,6 +43,8 @@ class SamplingLab:
         self.last_summary: dict[str, float] | None = None
         self._last_curve = None
         self._closed = False
+        self._active_pair: tuple[str, str] | None = None
+        self._settings_by_pair: dict[tuple[str, str], dict[str, float | int]] = {}
 
         common_layout = widgets.Layout(width="470px")
         common_style = {"description_width": "90px"}
@@ -153,6 +155,18 @@ class SamplingLab:
         self._on_configuration_change(None)
 
     def _on_configuration_change(self, _change: Any) -> None:
+        current = {
+            "scale": float(self.scale.value),
+            "n_chains": int(self.n_chains.value),
+            "burn_fraction": float(self.burn_fraction.value),
+            "n_leapfrog": int(self.n_leapfrog.value),
+        }
+        if self._active_pair is not None:
+            self._settings_by_pair[self._active_pair] = current.copy()
+        pair = (self.target.value, self.method.value)
+        # Returning to a pair restores its tuning. A new pair inherits the
+        # current controls instead of resetting them to starting guesses.
+        setting = self._settings_by_pair.get(pair, current)
         method = self.method.value
         if method == "RWMH":
             self.scale.description = "proposal σ"
@@ -168,13 +182,13 @@ class SamplingLab:
             lower, upper = -3.0, 0.3
         self.scale.max = upper
         self.scale.min = lower
-        setting = DEFAULT_SETTINGS[(self.target.value, method)]
-        self.scale.value = float(setting["scale"])
+        requested_scale = float(setting["scale"])
+        self.scale.value = min(max(requested_scale, 10**lower), 10**upper)
         self.n_chains.value = int(setting["n_chains"])
         self.burn_fraction.value = float(setting["burn_fraction"])
+        self.n_leapfrog.value = int(setting["n_leapfrog"])
         if method == "HMC":
             self.n_leapfrog.layout.display = "flex"
-            self.n_leapfrog.value = int(setting["n_leapfrog"])
         else:
             self.n_leapfrog.layout.display = "none"
         target = TARGETS[self.target.value]
@@ -182,6 +196,9 @@ class SamplingLab:
             f"<span style='margin-left:8px;color:#555'>{escape(target.challenge)}</span>"
         )
         self._update_allocation_preview(None)
+        self._active_pair = pair
+        if self.scale.value != requested_scale:
+            self.status.value += " Scale clipped to this method's slider range."
 
     def _update_allocation_preview(self, _change: Any) -> None:
         self._mark_settings_changed(None)
@@ -246,9 +263,9 @@ class SamplingLab:
         ensemble = self.last_ensemble
         summary = self.last_summary
         assert ensemble is not None and summary is not None
-        threshold = SWD_PASS_THRESHOLDS.get(ensemble.target_key)
+        threshold = SWD_PASS_THRESHOLDS.get((ensemble.target_key, ensemble.method))
         status = "GUIDED CASE" if threshold is None else (
-            "PASS" if benchmark_passed(ensemble.target_key, summary) else "TUNE MORE"
+            "PASS" if benchmark_passed(ensemble.target_key, ensemble.method, summary) else "TUNE MORE"
         )
         limit = "" if threshold is None else f"; required ≤ {threshold:.3f}"
         self.result_status.value = (

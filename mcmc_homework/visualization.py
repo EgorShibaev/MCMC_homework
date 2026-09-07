@@ -282,7 +282,7 @@ def plot_ensemble_sampling_run(
                 zorder=4 if selected else 2,
                 label=label,
             )
-    threshold = SWD_PASS_THRESHOLDS.get(ensemble.target_key)
+    threshold = SWD_PASS_THRESHOLDS.get((ensemble.target_key, ensemble.method))
     if threshold is not None:
         ax_swd.axhline(
             threshold,
@@ -439,16 +439,13 @@ def plot_swd_convergence(results: Sequence[BenchmarkResult]) -> Figure:
                 markersize=3.0,
                 linewidth=1.5,
                 color=method_colors.get(result.method),
-                label=result.method,
+                label=f"{result.method} (≤ {result.threshold:.3f})",
             )
-        threshold = SWD_PASS_THRESHOLDS[target_key]
-        axis.axhline(
-            threshold,
-            color="black",
-            linestyle="--",
-            linewidth=1.25,
-            label=f"pass threshold = {threshold:.3f}",
-        )
+            axis.axhline(
+                result.threshold,
+                color=method_colors.get(result.method),
+                linestyle="--", linewidth=1.0, alpha=0.6,
+            )
         axis.set(
             xlabel="cumulative target-evaluation budget",
             ylabel="worst-repeat SWD (lower is better)",
@@ -519,7 +516,8 @@ def metrics_html(
     """Return a compact metric table suitable for notebook display."""
 
     metrics = experiment.metrics
-    threshold = SWD_PASS_THRESHOLDS.get(experiment.target_key)
+    method = experiment.method if isinstance(experiment, EnsembleExperiment) else experiment.result.method
+    threshold = SWD_PASS_THRESHOLDS.get((experiment.target_key, method))
     threshold_text = (
         f"≤ {threshold:.3f}" if threshold is not None else "N/A — guided case study"
     )

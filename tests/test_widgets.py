@@ -6,10 +6,40 @@ from unittest.mock import patch
 import matplotlib.pyplot as plt
 from IPython.utils.capture import capture_output
 
-from mcmc_homework import BENCHMARK_SEEDS, benchmark_passed, build_sampling_lab
+from mcmc_homework import BENCHMARK_SEEDS, DEFAULT_SETTINGS, benchmark_passed, build_sampling_lab
 
 
 class WidgetTests(unittest.TestCase):
+    def test_switching_pairs_preserves_tuning_without_starting_sampling(self) -> None:
+        lab = build_sampling_lab()
+        self.addCleanup(lab.close)
+        with patch.object(lab, "run", side_effect=AssertionError("Unexpected sampling")):
+            lab.scale.value, lab.n_chains.value, lab.burn_fraction.value = .27, 5, .35
+            lab.target.value = "banana"  # first visit inherits the controls
+            self.assertEqual((lab.scale.value, lab.n_chains.value, lab.burn_fraction.value), (.27, 5, .35))
+            lab.scale.value, lab.n_chains.value = .41, 3
+            lab.method.value = "HMC"
+            lab.scale.value, lab.n_leapfrog.value = .07, 31
+            lab.target.value = "mixture"
+            self.assertEqual((lab.scale.value, lab.n_leapfrog.value), (.07, 31))
+            lab.scale.value, lab.n_leapfrog.value = .9, 7
+            lab.target.value = "banana"
+            self.assertEqual((lab.scale.value, lab.n_leapfrog.value), (.07, 31))
+            lab.method.value = "RWMH"
+            self.assertEqual((lab.scale.value, lab.n_chains.value, lab.burn_fraction.value), (.41, 3, .35))
+            lab.target.value = "gaussian"
+            self.assertEqual((lab.scale.value, lab.n_chains.value, lab.burn_fraction.value), (.27, 5, .35))
+            lab.scale.value = 4.0
+            lab.method.value = "ULA"  # only out-of-range values are clipped
+            self.assertEqual(lab.scale.value, 1.0)
+            self.assertIn("clipped", lab.status.value)
+            lab.method.value = "RWMH"
+            self.assertEqual(lab.scale.value, 4.0)  # clipping did not overwrite it
+        self.assertEqual(DEFAULT_SETTINGS["gaussian", "RWMH"]["scale"], .12)
+        other_lab = build_sampling_lab()
+        self.addCleanup(other_lab.close)
+        self.assertEqual(other_lab.scale.value, .12)  # caches are per lab instance
+
     def test_reported_c1_setting_is_not_a_benchmark_pass_or_duplicate_output(self) -> None:
         lab = build_sampling_lab()
         self.addCleanup(lab.close)
@@ -23,7 +53,7 @@ class WidgetTests(unittest.TestCase):
         self.assertAlmostEqual(lab.last_ensembles[0].metrics["swd"], 0.0395868323, places=7)
         self.assertAlmostEqual(lab.last_summary["worst_swd"], 0.0725764047, places=7)
         self.assertAlmostEqual(lab._last_curve["worst_swd"][-1], lab.last_summary["worst_swd"])
-        self.assertFalse(benchmark_passed("gaussian", lab.last_summary))
+        self.assertFalse(benchmark_passed("gaussian", "RWMH", lab.last_summary))
         self.assertIn("TUNE MORE", lab.result_status.value)
         self.assertIn("0.0726", lab.result_status.value)
         self.assertEqual(len(lab.output.outputs), 2)

@@ -20,7 +20,7 @@ sampling failures; it does not hide deliberate implementation bugs.
 - `mcmc_homework/visualization.py` — trajectory, trace, autocorrelation, and
   mode-proportion plots, plus the fixed-budget SWD convergence figure.
 - `mcmc_homework/experiments.py` — fixed-budget multi-chain ensembles,
-  repeated-seed benchmarks, target-specific pass thresholds, and convergence
+  repeated-seed benchmarks, target–method-specific pass thresholds, and convergence
   calculations.
 - `mcmc_homework/widgets.py` — sliders and button-driven notebook interface.
 - `tests/` — numerical correctness and regression tests.
@@ -39,11 +39,21 @@ step size `eta` for ULA and MALA, and HMC step size `epsilon` plus leapfrog coun
 
 The entire selected multi-chain ensemble is repeated with base seeds
 `(11, 23, 47)`. A row passes when its **worst-repeat standardized
-sliced-Wasserstein distance** is at most 0.06 for the tilted Gaussian, 0.115 for
-the banana, or 0.15 for the 65:35 mixture, with no divergent ensemble. All 12
+sliced-Wasserstein distance** meets the limit for that distribution–method pair,
+with no divergent ensemble. The notebook lists all limits, generated directly
+from `SWD_PASS_THRESHOLDS[(target, method)]` in `experiments.py`. All 12
 core rows must pass. The notebook table reports `PASS` or `TUNE MORE`, and the
 adjacent plot tracks worst-repeat SWD against the cumulative target-evaluation
-budget.
+budget. Each method's dashed threshold matches its curve colour and is stated
+in the legend.
+
+Limits are calibrated with a broad hyperparameter search and local refinement
+on the official seeds. Each limit leaves a margin over the best result and
+admits at least five distinct tested trajectory configurations. Three additional
+seeds check sensitivity; their results do not inflate the grading limits. This
+is an empirical finite-budget requirement, not a guarantee for every future seed.
+The 10:90 mixture also has pair-specific limits for optional lab exploration;
+it remains outside the 12 required core benchmark rows.
 
 The total work budget, benchmark base seeds, initial states, accounting rule,
 and pass thresholds are fixed. Choosing more chains makes each chain shorter;
@@ -61,6 +71,9 @@ is not a benchmark pass. The dashboard and metric table are replaced on every
 click, not appended.
 The banner summarizes the three repeats; the compact diagnostics table contains
 only the selected seed's results. Settings and state counts stay in the controls.
+The lab remembers settings per target–method pair within the session. New pairs
+inherit the current controls (scale is clipped only to valid slider bounds);
+returning to a pair restores its saved tuning without launching sampling.
 
 ## Required experimental analysis
 

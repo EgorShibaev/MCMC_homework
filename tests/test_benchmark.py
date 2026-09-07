@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 
 from mcmc_homework import (
     SWD_PASS_THRESHOLDS,
+    METHODS,
+    TARGETS,
     BenchmarkResult,
     benchmark_passed,
     benchmark_results_html,
@@ -70,15 +72,15 @@ class BenchmarkTests(unittest.TestCase):
         self.assertIn(f"≤ {threshold}", benchmark_results_html([result]))
         self.assertIn(f"≤ {threshold}", metrics_html(ensembles[0]))
         for figure, label in (
-            (plot_ensemble_sampling_run(ensembles[0]), "official target"),
-            (plot_swd_convergence([result]), "pass threshold"),
+            (plot_ensemble_sampling_run(ensembles[0]), f"official target = {threshold}"),
+            (plot_swd_convergence([result]), f"RWMH (≤ {threshold})"),
         ):
             try:
                 labels = [
                     text for axis in figure.axes
                     for text in axis.get_legend_handles_labels()[1]
                 ]
-                self.assertIn(f"{label} = {threshold}", labels)
+                self.assertIn(label, labels)
             finally:
                 plt.close(figure)
 
@@ -86,7 +88,7 @@ class BenchmarkTests(unittest.TestCase):
         from scripts.build_notebook import build_notebook
 
         # The prose must follow the grading constants, including after a change.
-        with patch.dict(SWD_PASS_THRESHOLDS, {"gaussian": 0.0123}):
+        with patch.dict(SWD_PASS_THRESHOLDS, {("gaussian", "RWMH"): 0.0123}):
             notebook = build_notebook()
             theory = "\n".join(
                 cell.source for cell in notebook.cells if cell.cell_type == "markdown"
@@ -95,19 +97,36 @@ class BenchmarkTests(unittest.TestCase):
                 ("gaussian", "tilted Gaussian"),
                 ("banana", "banana"),
                 ("mixture", "65:35 mixture"),
+                ("imbalanced_mixture", "10:90 mixture (optional)"),
             ):
                 self.assertIn(
-                    f"| {label} | $\\leq {SWD_PASS_THRESHOLDS[key]:g}$ |", theory
+                    f"| {label} | " + " | ".join(
+                        f"$\\leq {SWD_PASS_THRESHOLDS[key, method]:g}$" for method in METHODS
+                    ) + " |", theory
                 )
 
     def test_pass_rule_uses_worst_seed_and_divergence(self) -> None:
-        threshold = SWD_PASS_THRESHOLDS["gaussian"]
+        threshold = SWD_PASS_THRESHOLDS["gaussian", "RWMH"]
         passing = {"worst_swd": threshold, "divergent_runs": 0.0}
         too_inaccurate = {"worst_swd": threshold + 1e-6, "divergent_runs": 0.0}
         divergent = {"worst_swd": threshold - 0.1, "divergent_runs": 1.0}
-        self.assertTrue(benchmark_passed("gaussian", passing))
-        self.assertFalse(benchmark_passed("gaussian", too_inaccurate))
-        self.assertFalse(benchmark_passed("gaussian", divergent))
+        self.assertTrue(benchmark_passed("gaussian", "RWMH", passing))
+        self.assertFalse(benchmark_passed("gaussian", "RWMH", too_inaccurate))
+        self.assertFalse(benchmark_passed("gaussian", "RWMH", divergent))
+
+    def test_thresholds_cover_every_pair_and_grade_methods_separately(self) -> None:
+        self.assertEqual(set(SWD_PASS_THRESHOLDS), {(target, method) for target in TARGETS for method in METHODS})
+        self.assertTrue(all(np.isfinite(value) and value > 0 for value in SWD_PASS_THRESHOLDS.values()))
+        summary = {"worst_swd": 0.15, "divergent_runs": 0.0}
+        with patch.dict(SWD_PASS_THRESHOLDS, {("gaussian", "RWMH"): .1, ("gaussian", "ULA"): .2}):
+            self.assertFalse(benchmark_passed("gaussian", "RWMH", summary))
+            self.assertTrue(benchmark_passed("gaussian", "ULA", summary))
+            for method, expected in (("RWMH", False), ("ULA", True)):
+                result = BenchmarkResult("gaussian", method, .01, None, 1, .25, 40_000, [], summary)
+                self.assertEqual(result.threshold, SWD_PASS_THRESHOLDS["gaussian", method])
+                self.assertEqual(result.passed, expected)
+        with self.assertRaises(KeyError):
+            benchmark_passed("gaussian", "unknown", summary)
 
     def test_swd_convergence_tracks_requested_prefixes(self) -> None:
         experiments = [
@@ -146,7 +165,7 @@ class BenchmarkTests(unittest.TestCase):
         html = metrics_html(experiment)
         self.assertNotIn("How to read it", html)
         self.assertIn("Official worst-repeat SWD target", html)
-        self.assertIn(f"≤ {SWD_PASS_THRESHOLDS['gaussian']:.3f}", html)
+        self.assertIn(f"≤ {SWD_PASS_THRESHOLDS['gaussian', 'RWMH']:.3f}", html)
         self.assertEqual(html.count("<th style"), 2)
 
     def test_budget_is_split_across_chains_and_combined(self) -> None:
