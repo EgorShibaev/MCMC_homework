@@ -32,11 +32,12 @@ MAX_STUDENT_CHAINS = 8
 # target-specific threshold and none of the ensembles diverged. These thresholds
 # were calibrated with the correct reference implementations at the fixed
 # 40,000-target-evaluation ensemble budget. They are attainable by every method, but
-# the deliberately untuned defaults do not all pass.
+# the deliberately untuned defaults do not all pass. Passing the numerical gate
+# does not replace the notebook's controlled investigations and evidence.
 SWD_PASS_THRESHOLDS: dict[str, float] = {
-    "gaussian": 0.08,
-    "banana": 0.13,
-    "mixture": 0.38,
+    "gaussian": 0.06,
+    "banana": 0.115,
+    "mixture": 0.15,
 }
 
 

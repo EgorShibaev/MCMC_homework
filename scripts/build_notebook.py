@@ -7,6 +7,8 @@ from textwrap import dedent
 
 import nbformat as nbf
 
+from mcmc_homework import SWD_PASS_THRESHOLDS
+
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "MCMC_Homework.ipynb"
@@ -150,11 +152,11 @@ def build_notebook() -> nbf.NotebookNode:
 
             | target | required worst-repeat SWD |
             |---|---:|
-            | tilted Gaussian | $\leq 0.08$ |
-            | banana | $\leq 0.13$ |
-            | 65:35 mixture | $\leq 0.38$ |
+            | tilted Gaussian | $\leq __GAUSSIAN_SWD__$ |
+            | banana | $\leq __BANANA_SWD__$ |
+            | 65:35 mixture | $\leq __MIXTURE_SWD__$ |
 
-            To pass the homework, all **12** core target–method rows must say **PASS**. Every row receives the same total budget of **40,000 target evaluations per benchmark ensemble**, including burn-in and divided across all student-selected chains. One call to $\log\pi$ and one call to $\nabla\log\pi$ each count as one evaluation. Reference sampling, plotting, and metric calculations do not consume this sampling budget.
+            The numerical requirement is **PASS on all 12 core target–method rows**. Completing the homework also requires the six controlled investigations below, including your own screenshots and explanations. A passing table alone is not a complete submission. Every row receives the same total budget of **40,000 target evaluations per benchmark ensemble**, including burn-in and divided across all student-selected chains. One call to $\log\pi$ and one call to $\nabla\log\pi$ each count as one evaluation. Reference sampling, plotting, and metric calculations do not consume this sampling budget.
 
             ### What students tune for the submitted benchmark
 
@@ -187,7 +189,9 @@ def build_notebook() -> nbf.NotebookNode:
             **Students may not change:** the 40,000-evaluation budget, the three benchmark base seeds, initial states, evaluation accounting, or SWD thresholds.
 
             Burn-in removes an initial transient. It cannot fix discretization bias, mode trapping, or a poorly tuned integrator.
-            """,
+            """.replace("__GAUSSIAN_SWD__", f"{SWD_PASS_THRESHOLDS['gaussian']:g}")
+            .replace("__BANANA_SWD__", f"{SWD_PASS_THRESHOLDS['banana']:g}")
+            .replace("__MIXTURE_SWD__", f"{SWD_PASS_THRESHOLDS['mixture']:g}"),
             "theory",
         )
     )
@@ -217,6 +221,7 @@ def build_notebook() -> nbf.NotebookNode:
                 TARGETS,
                 benchmark_all_settings,
                 benchmark_results_html,
+                benchmark_setting,
                 build_sampling_lab,
                 gradient_check_report,
                 metrics_html,
@@ -342,9 +347,15 @@ def build_notebook() -> nbf.NotebookNode:
             r"""
             ## 6. Record and benchmark your settings
 
-            Replace every value below. RWMH uses `scale = sigma`; ULA/MALA use `scale = eta`; HMC uses `scale = epsilon` plus `n_leapfrog = L`. The supplied values are starting guesses, not optimized answers.
+            Record a justified choice for every row below. RWMH uses `scale = sigma`; ULA/MALA use `scale = eta`; HMC uses `scale = epsilon` plus `n_leapfrog = L`. The supplied values are starting guesses, not optimized answers. Keep a search log containing at least three distinct candidate configurations per row (at least 36 entries in total); report failures as well as improvements. You may search manually or with your own script.
 
-            For every row, edit `scale`, `n_chains`, and `burn_fraction`; HMC rows additionally edit `n_leapfrog`. Choose them separately for all three targets. Do not change the official 40,000-evaluation budget, benchmark base seeds `(11, 23, 47)`, initial states, accounting rule, or SWD thresholds. The table gives each row a direct **PASS / TUNE MORE** status. The plot shows whether worst-repeat SWD approaches and crosses the dashed requirement as the shared evaluation budget is spent. Curves need not decrease monotonically.
+            For each candidate, record target, method, scale, $L$ if applicable, $C$, burn-in, and the measured SWD. Mark whether a score is from the lab's single base seed or from the three-repeat benchmark. Fully benchmark at least your two strongest candidates per row and report their worst-repeat SWD before selecting your final configuration. Changing a parameter is not mandatory when your experiments justify retaining its value.
+
+            For every row, choose `scale`, `n_chains`, and `burn_fraction`; HMC rows additionally choose `n_leapfrog`. Choose them separately for all three targets. Do not change the official 40,000-evaluation budget, benchmark base seeds `(11, 23, 47)`, initial states, accounting rule, or SWD thresholds. The table gives each row a direct **PASS / TUNE MORE** status. The plot shows whether worst-repeat SWD approaches and crosses the dashed requirement as the shared evaluation budget is spent. Curves need not decrease monotonically.
+
+            To check one candidate across the official repeats without rerunning all 12 rows, call `benchmark_setting(target_key, method, **candidate, seeds=BENCHMARK_SEEDS, target_eval_budget=BENCHMARK_TARGET_EVAL_BUDGET)`. Here `candidate` is a settings dictionary with the same fields as a row of `student_settings`. The returned pair is `(ensembles, summary)`; record `summary["worst_swd"]` in your log.
+
+            **Your search log and justification of the final candidates:** _insert your table here, or link to an included results file._
             """,
             "assignment",
         )
@@ -352,7 +363,7 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         code(
             """
-            # TODO: replace all 12 core settings after exploration.
+            # TODO: select and justify all 12 configurations after exploration.
             student_settings = {
                 key: value.copy()
                 for key, value in DEFAULT_SETTINGS.items()
@@ -388,14 +399,31 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ## Task A — tilted Gaussian
+            ## 7. Controlled investigations: explain what the hyperparameters do
 
-            1. Tune all four methods, including $C$ and burn-in. For HMC, also explore both $\epsilon$ and $L$.
-            2. Derive the Gaussian ULA stability condition $\eta<2\lambda_{\min}(\Sigma)$ and compare it with empirical instability.
-            3. Explain the isotropic RWMH compromise between the long and narrow axes.
-            4. Compare MALA and HMC gradient costs as well as raw ESS.
+            Complete all six investigations. The goal is to explain observed trade-offs using evidence, not just find settings that pass. Unless an investigation says otherwise, change **one parameter at a time** and keep the method, target, initial state, base seed 11, $C$, burn-in, and total budget fixed. The automatically derived chain length may change; record it. Use the same target-specific axes when comparing plots.
 
-            **Your answer:** _replace this text._
+            For every investigation, include a compact results table and a 100–200 word explanation connecting **parameter change → observed behaviour → measured effect**. The table should identify every setting and include SWD, ESS/1k, acceptance (N/A for ULA), states per chain, and retained states. For mixtures, also report mode-mass error and within-chain switches. Add a divergence flag; do not omit failed runs or replace them with successful seeds. Describe results that contradict your initial prediction rather than forcing an expected pattern.
+
+            **Screenshot requirement:** capture your own lab dashboard **and its metric table**, with the target, method, full settings, and budget visible or stated in the caption. Save each contrasting run before pressing Start again, because the lab replaces the previous output. Insert labelled before/after or small/large screenshots beneath the corresponding answer, with at least the evidence specified below. Several captures may be assembled into one readable comparison panel. Screenshots must show completed runs and readable axis labels and numbers.
+
+            In a Markdown answer cell, paste images as notebook attachments, or link to included files, for example `![RWMH: small proposal](screenshots/investigation-1-small.png)`. If using linked files, submit the `screenshots/` directory alongside the notebook; local absolute paths will not work on another computer. Synthetic diagrams and copies of the supplied demo are not substitutes for your experiment screenshots.
+            """,
+            "assignment",
+        )
+    )
+    cells.append(
+        markdown(
+            r"""
+            ### Investigation 1 — RWMH: acceptance versus movement
+
+            On both the tilted Gaussian and the 65:35 mixture, test at least three proposal scales $\sigma$: small, intermediate, and large. Keep $C$ and burn-in fixed within each target. Choose a range wide enough to reveal different behaviour, then refine it if necessary.
+
+            Explain how acceptance, repeated states, distance travelled, and autocorrelation change. Can very high acceptance coexist with poor SWD or ESS? Why does a scale that traverses the Gaussian's long axis also cause rejection across its narrow axis? On the mixture, does a larger proposal discover the other mode more often, and at what cost?
+
+            **Evidence:** screenshot the small- and large-scale runs on each target (four captures, which may be arranged into two panels). Include all six or more runs in your results table. Explain your preferred compromise for each geometry.
+
+            **Your results table, screenshots with captions, and explanation:** _replace this text._
             """,
             "student-answer",
         )
@@ -403,14 +431,15 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ## Task B — banana geometry
+            ### Investigation 2 — ULA: slow exploration, discretization bias, and instability
 
-            1. Tune all four methods, chain allocation, and burn-in; report the fixed-budget rows.
-            2. Find a high-acceptance setting with poor exploration and explain its trace/ACF.
-            3. Find a ULA step with visible bias. Which task-specific diagnostics expose it?
-            4. Explain how longer HMC trajectories follow the curved typical set and when they cease to help.
+            On the Gaussian and banana targets, compare a small, intermediate, and large step $\eta$, keeping $C$ and burn-in fixed. Look for a stable but slowly exploring run, a useful compromise, and a large-step run with distorted shape or divergence. If a run diverges, record that outcome and try a nearby smaller step to examine the stable regime.
 
-            **Your answer:** _replace this text._
+            Use traces and ACF to discuss mixing, and covariance error (Gaussian) or residual-scale error (banana) to discuss shape. Why can a step with larger ESS still have worse SWD? Explain the simultaneous changes in gradient drift and noise amplitude $\sqrt{2\eta}$. For the Gaussian, derive $\eta<2\lambda_{\min}(\Sigma)$ from the linear update and relate this stability condition to your observations. Stability alone does not imply accurate sampling. Do not attribute every single-run error to discretization bias; state what your evidence can distinguish from finite-sample error.
+
+            **Evidence:** screenshot the small- and large-step runs on each target (four captures). If the large step diverges, include the warning. Include the intermediate settings in the results table.
+
+            **Your results table, screenshots with captions, and explanation:** _replace this text._
             """,
             "student-answer",
         )
@@ -418,14 +447,15 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ## Task C — 65:35 mixture
+            ### Investigation 3 — MALA: what the Metropolis correction changes
 
-            1. Tune all four methods, chain allocation, and burn-in; report mode mass and switches as well as SWD.
-            2. Construct a run with convincing within-mode scatter that misses a component.
-            3. Explain why coordinate ESS can be misleading and why the mode indicator is included.
-            4. Compare two initial components. Which methods remain sensitive to initialization at this budget?
+            On the banana, run ULA and MALA at the same three step sizes: small, intermediate, and aggressive. Hold $C$, burn-in, and the 40,000-evaluation budget fixed. You may reuse ULA runs from Investigation 2 if their settings match exactly.
 
-            **Your answer:** _replace this text._
+            Explain why the two methods share a proposal but can produce different retained clouds and traces. What happens to MALA acceptance and repeated states as $\eta$ increases? Does correction automatically imply good finite-budget sampling? Compare the automatically allocated states per chain: MALA uses both density and gradient calls. Discuss accuracy and efficiency together when choosing between the two methods.
+
+            **Evidence:** place screenshots of ULA and MALA at the same aggressive step side by side (two captures). Report all six combinations in the table and identify the scale at which correction most visibly changes behaviour.
+
+            **Your results table, screenshots with captions, and explanation:** _replace this text._
             """,
             "student-answer",
         )
@@ -433,17 +463,49 @@ def build_notebook() -> nbf.NotebookNode:
     cells.append(
         markdown(
             r"""
-            ## Task D — bias, cost, and synthesis
+            ### Investigation 4 — HMC: short versus long trajectories
 
-            1. Compare one long chain with several shorter chains at the same 40,000-evaluation budget. Which targets benefit from restarts, and which require long trajectories?
-            2. Explain your chosen burn-in. Show one example where too little retains initialization bias and one where too much wastes the fixed budget.
-            3. For HMC, explain the interaction among $\epsilon$, $L$, chain count, and the automatically determined number of transitions.
-            4. For ULA, halve $\eta$ without changing the evaluation budget. Explain the bias–mixing trade-off.
-            5. Rank the four methods for each core target using mean/worst SWD first and ESS per 1,000 evaluations second.
-            6. Use the convergence figure: identify when each curve first crosses its threshold and whether it remains below it. Explain any non-monotonicity.
-            7. Explain why a low SWD from one lucky benchmark repeat is insufficient evidence.
+            On both the banana and the 65:35 mixture, compare a small $L$ (1–3), an intermediate $L$ (8–15), and a large $L$ (25–40). Keep $\epsilon$, $C$, and burn-in fixed within each target. These ranges define contrasts, not recommended optima. Record trajectory duration $T=\epsilon L$, states per chain, acceptance, SWD, and ESS/1k.
 
-            **Your answer:** _replace this text._
+            Explain whether longer trajectories travel farther or switch modes more often, and whether that benefit compensates for fewer proposals under the fixed budget. Do you observe wasted travel, rejection, or a trajectory returning near its starting point? Increasing $L$ is not guaranteed to help: explain your actual observations on both geometries.
+
+            Next, on one of those targets, hold $L$, $C$, and burn-in fixed and compare small versus large $\epsilon$. Explain how changing integration accuracy differs from changing $L$. Distinguish leapfrog steps inside a proposal from retained MCMC states.
+
+            **Evidence:** screenshot low and high $L$ on each target (four captures), plus the small/large $\epsilon$ comparison (two captures). Record intermediate runs in the table. Justify your final $(\epsilon,L)$ jointly.
+
+            **Your results table, screenshots with captions, and explanation:** _replace this text._
+            """,
+            "student-answer",
+        )
+    )
+    cells.append(
+        markdown(
+            r"""
+            ### Investigation 5 — Chain count: independent restarts versus chain length
+
+            Compare $C=1,2,4,8$ for ULA and HMC on both the Gaussian and the 65:35 mixture. For each target–method pair, hold scale, $L$ where applicable, and burn-in fixed. The total budget remains 40,000 across all chains. List states and retained states per chain as $C$ changes.
+
+            Explain how independent restarts and shorter within-chain exploration compete. At a fixed burn-in fraction, the total fraction of work discarded is approximately unchanged; the difficulty is that each shorter chain must still escape its initial transient. All chains start from the same supplied point: why can many trapped chains still miss a mixture mode? Compare pooled SWD with the individual traces and mode switches. Use the three benchmark base seeds to check whether the apparent benefit of your preferred $C$ survives repetition.
+
+            **Evidence:** screenshot $C=1$ and $C=8$ for at least two contrasting target–method pairs (four captures, showing all chain traces). Include the full four-pair sweep in the table and explain any differences between methods or geometries.
+
+            **Your results table, screenshots with captions, and explanation:** _replace this text._
+            """,
+            "student-answer",
+        )
+    )
+    cells.append(
+        markdown(
+            r"""
+            ### Investigation 6 — Burn-in and the reliability of your final choice
+
+            Choose two contrasting target–method pairs from your earlier experiments. For each, compare 5%, 20%, and 40% burn-in while keeping every other setting fixed. With the same base seed the generated paths should be identical: only the portion retained for scoring changes. Report retained counts, SWD, ESS/1k, and any initial transient visible in the traces.
+
+            Explain when discarding more states improves accuracy and when it loses useful information. Does extra burn-in resolve a missing mode or ULA's finite-step bias? If your two cases behave similarly, say so and support that conclusion rather than inventing a contrast.
+
+            **Evidence:** screenshot low versus high burn-in for both pairs (four captures). Then include your final **12/12 PASS** benchmark table and SWD-versus-budget figure, with your completed search log from Section 6. Discuss at least one setting that looked attractive in the lab but was worse across the benchmark repeats; if none did, compare the measured gaps for your two strongest candidates. Explain why these finite-run pass marks do not prove convergence or universal superiority of a method.
+
+            **Your results table, screenshots with captions, and explanation:** _replace this text._
             """,
             "student-answer",
         )
@@ -458,10 +520,14 @@ def build_notebook() -> nbf.NotebookNode:
             - [ ] I ran the unchanged 40,000-evaluation benchmark with all three fixed base seeds.
             - [ ] Every row in the benchmark table says **PASS** (12/12).
             - [ ] I reported mean $\pm$ SD and worst-repeat SWD.
+            - [ ] My search log contains at least three candidates per row, including full benchmarks for the two strongest.
             - [ ] I interpreted the SWD-over-target-evaluation-budget figure.
             - [ ] I interpreted acceptance, ESS/target-evaluation cost, and task diagnostics.
             - [ ] I completed the 10:90 rare-mode case-study questions.
-            - [ ] I answered Tasks A–D and restarted the kernel before submission.
+            - [ ] I completed all six controlled investigations with results tables and explanations.
+            - [ ] I inserted my own labelled screenshots for every requested comparison, including unsuccessful runs.
+            - [ ] My images are embedded as attachments or included in a portable `screenshots/` directory.
+            - [ ] I included the final benchmark table and convergence figure, then restarted the kernel and ran all cells before submission.
             """,
             "assignment",
         )

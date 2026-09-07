@@ -1,19 +1,69 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 from mcmc_homework import (
     SWD_PASS_THRESHOLDS,
+    BenchmarkResult,
     benchmark_passed,
+    benchmark_results_html,
+    benchmark_setting,
     metrics_html,
+    plot_ensemble_sampling_run,
+    plot_swd_convergence,
     run_ensemble_experiment,
     swd_convergence,
 )
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_threshold_precision_in_lab_benchmark_and_plots(self) -> None:
+        ensembles, summary = benchmark_setting(
+            "banana", "RWMH", scale=0.7, target_eval_budget=800, seeds=(11,)
+        )
+        result = BenchmarkResult(
+            target_key="banana", method="RWMH", scale=0.7,
+            n_leapfrog=None, n_chains=1, burn_fraction=0.25,
+            target_eval_budget=800, experiments=ensembles, summary=summary,
+        )
+        threshold = f"{result.threshold:.3f}"
+        self.assertIn(f"≤ {threshold}", benchmark_results_html([result]))
+        self.assertIn(f"≤ {threshold}", metrics_html(ensembles[0]))
+        for figure, label in (
+            (plot_ensemble_sampling_run(ensembles[0]), "official target"),
+            (plot_swd_convergence([result]), "pass threshold"),
+        ):
+            try:
+                labels = [
+                    text for axis in figure.axes
+                    for text in axis.get_legend_handles_labels()[1]
+                ]
+                self.assertIn(f"{label} = {threshold}", labels)
+            finally:
+                plt.close(figure)
+
+    def test_notebook_pass_table_uses_active_thresholds(self) -> None:
+        from scripts.build_notebook import build_notebook
+
+        # The prose must follow the grading constants, including after a change.
+        with patch.dict(SWD_PASS_THRESHOLDS, {"gaussian": 0.0123}):
+            notebook = build_notebook()
+            theory = "\n".join(
+                cell.source for cell in notebook.cells if cell.cell_type == "markdown"
+            )
+            for key, label in (
+                ("gaussian", "tilted Gaussian"),
+                ("banana", "banana"),
+                ("mixture", "65:35 mixture"),
+            ):
+                self.assertIn(
+                    f"| {label} | $\\leq {SWD_PASS_THRESHOLDS[key]:g}$ |", theory
+                )
+
     def test_pass_rule_uses_worst_seed_and_divergence(self) -> None:
         threshold = SWD_PASS_THRESHOLDS["gaussian"]
         passing = {"worst_swd": threshold, "divergent_runs": 0.0}
@@ -60,7 +110,7 @@ class BenchmarkTests(unittest.TestCase):
         html = metrics_html(experiment)
         self.assertNotIn("How to read it", html)
         self.assertIn("Official worst-repeat SWD target", html)
-        self.assertIn("≤ 0.080", html)
+        self.assertIn(f"≤ {SWD_PASS_THRESHOLDS['gaussian']:.3f}", html)
         self.assertEqual(html.count("<th style"), 2)
 
     def test_budget_is_split_across_chains_and_combined(self) -> None:

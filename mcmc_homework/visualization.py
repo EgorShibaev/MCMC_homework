@@ -274,7 +274,7 @@ def plot_ensemble_sampling_run(
             color="black",
             linestyle="--",
             linewidth=1.1,
-            label=f"official target = {threshold:.2f}",
+            label=f"official target = {threshold:.3f}",
         )
     ax_swd.set(
         xlabel="cumulative target-evaluation budget",
@@ -388,7 +388,7 @@ def plot_mode_ratio_comparison(
 
 
 def plot_swd_convergence(results: Sequence[BenchmarkResult]) -> Figure:
-    """Plot the grading metric over retained iterations for every benchmark row."""
+    """Plot the grading metric over target-evaluation budgets for every row."""
 
     if not results:
         raise ValueError("At least one benchmark result is required.")
@@ -422,7 +422,7 @@ def plot_swd_convergence(results: Sequence[BenchmarkResult]) -> Figure:
             color="black",
             linestyle="--",
             linewidth=1.25,
-            label=f"pass threshold = {threshold:.2f}",
+            label=f"pass threshold = {threshold:.3f}",
         )
         axis.set(
             xlabel="cumulative target-evaluation budget",
@@ -567,7 +567,7 @@ def benchmark_results_html(results: Sequence[BenchmarkResult]) -> str:
             f"<td>{escape(result.method)}</td>"
             f"<td>{setting_text}</td>"
             f"<td>{summary['mean_swd']:.3f} ± {summary['sd_swd']:.3f}</td>"
-            f"<td><b>{summary['worst_swd']:.3f}</b> / ≤ {result.threshold:.2f}</td>"
+            f"<td><b>{summary['worst_swd']:.3f}</b> / ≤ {result.threshold:.3f}</td>"
             f"<td>{summary['mean_ess_per_1000']:.1f}</td>"
             f"<td>{acceptance_text}</td>"
             f"<td>{int(summary['divergent_runs'])}</td>"
