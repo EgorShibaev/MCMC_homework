@@ -104,15 +104,12 @@ class SamplingLab:
             layout=common_layout,
             style=common_style,
         )
-        self.budget = widgets.HTML(
-            value=(
-                "<b>Fixed total budget:</b> "
-                f"{BENCHMARK_TARGET_EVAL_BUDGET:,} target evaluations per repeat; "
-                f"{len(BENCHMARK_SEEDS)} fixed repeats "
-                f"({len(BENCHMARK_SEEDS) * BENCHMARK_TARGET_EVAL_BUDGET:,} "
-                "calls maximum per click)."
-            )
+        self.n_seeds = widgets.IntSlider(
+            value=3, min=1, max=len(BENCHMARK_SEEDS), step=1,
+            description="seed repeats", continuous_update=False,
+            layout=common_layout, style=common_style,
         )
+        self.budget = widgets.HTML()
         self.allocation_preview = widgets.HTML()
         self.run_button = widgets.Button(
             description="Start sampling",
@@ -122,7 +119,7 @@ class SamplingLab:
         self.status = widgets.HTML()
         self.result_status = widgets.HTML()
         self.view_seed = widgets.Dropdown(
-            options=[(f"Base seed {seed}", seed) for seed in BENCHMARK_SEEDS],
+            options=[(f"Base seed {seed}", seed) for seed in BENCHMARK_SEEDS[:self.n_seeds.value]],
             value=BENCHMARK_SEEDS[0], description="View traces",
             style=common_style, layout=common_layout,
         )
@@ -138,6 +135,7 @@ class SamplingLab:
                 self.n_leapfrog,
                 self.burn_fraction,
                 self.n_chains,
+                self.n_seeds,
                 self.budget,
                 self.allocation_preview,
                 widgets.HBox([self.run_button, self.status]),
@@ -149,6 +147,7 @@ class SamplingLab:
         self.n_chains.observe(self._update_allocation_preview, names="value")
         self.n_leapfrog.observe(self._update_allocation_preview, names="value")
         self.burn_fraction.observe(self._update_allocation_preview, names="value")
+        self.n_seeds.observe(self._update_allocation_preview, names="value")
         self.scale.observe(self._mark_settings_changed, names="value")
         self.view_seed.observe(self._on_view_seed, names="value")
         self.run_button.on_click(self._on_click)
@@ -202,6 +201,13 @@ class SamplingLab:
 
     def _update_allocation_preview(self, _change: Any) -> None:
         self._mark_settings_changed(None)
+        repeats = int(self.n_seeds.value)
+        self.budget.value = (
+            f"<b>Budget:</b> {BENCHMARK_TARGET_EVAL_BUDGET:,} target evaluations per repeat; "
+            f"{repeats * BENCHMARK_TARGET_EVAL_BUDGET:,} calls maximum per click. "
+            f"{'Official evaluation' if repeats == len(BENCHMARK_SEEDS) else 'Exploratory evaluation'} "
+            f"({repeats}/{len(BENCHMARK_SEEDS)} benchmark seeds)."
+        )
         chain_count = int(self.n_chains.value)
         allocation, remainder = divmod(
             BENCHMARK_TARGET_EVAL_BUDGET, chain_count
@@ -243,12 +249,22 @@ class SamplingLab:
             target_eval_budget=BENCHMARK_TARGET_EVAL_BUDGET,
             n_chains=int(self.n_chains.value),
             burn_fraction=float(self.burn_fraction.value),
-            seeds=BENCHMARK_SEEDS,
+            seeds=BENCHMARK_SEEDS[:int(self.n_seeds.value)],
             n_leapfrog=int(self.n_leapfrog.value),
         )
         self.last_ensembles = ensembles
         self.last_summary = summary
         self._last_curve = swd_convergence(ensembles)
+        previous_seed = self.view_seed.value
+        evaluated_seeds = [e.base_seed for e in ensembles]
+        # Only completed results populate the trace selector. Updating its
+        # options must not trigger rendering of a partially updated result.
+        self.view_seed.unobserve(self._on_view_seed, names="value")
+        try:
+            self.view_seed.options = [(f"Base seed {seed}", seed) for seed in evaluated_seeds]
+            self.view_seed.value = previous_seed if previous_seed in evaluated_seeds else evaluated_seeds[0]
+        finally:
+            self.view_seed.observe(self._on_view_seed, names="value")
         self.last_ensemble = next(e for e in ensembles if e.base_seed == self.view_seed.value)
         return self.last_ensemble
 
@@ -267,11 +283,22 @@ class SamplingLab:
         status = "GUIDED CASE" if threshold is None else (
             "PASS" if benchmark_passed(ensemble.target_key, ensemble.method, summary) else "TUNE MORE"
         )
+        evaluated_seeds = tuple(e.base_seed for e in self.last_ensembles)
+        if evaluated_seeds != BENCHMARK_SEEDS:
+            status = "EXPLORATORY — " + (
+                "below limit" if status == "PASS" else "above limit / divergent"
+            )
         limit = "" if threshold is None else f"; required ≤ {threshold:.3f}"
+        repeat_summary = (
+            "1 seed repeat · SD unavailable"
+            if len(evaluated_seeds) == 1 else
+            f"{len(evaluated_seeds)} seed repeats · mean ± SD: "
+            f"{summary['mean_swd']:.4f} ± {summary['sd_swd']:.4f}"
+        )
         self.result_status.value = (
             f"<b>Last evaluated setting — {status}</b>: "
             f"worst-repeat SWD = {summary['worst_swd']:.4f}{limit}.<br>"
-            f"3 seeds · mean ± SD: {summary['mean_swd']:.4f} ± {summary['sd_swd']:.4f}"
+            f"{repeat_summary}"
         )
         if summary["divergent_runs"]:
             self.result_status.value += f" · divergent repeats: {int(summary['divergent_runs'])}"

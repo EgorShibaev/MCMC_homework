@@ -31,11 +31,14 @@ class NotebookTests(unittest.TestCase):
 
     def test_fresh_seed_calibration_does_not_expand_student_grading(self) -> None:
         source = "\n".join(c.source for c in build_notebook().cells)
-        self.assertEqual(BENCHMARK_SEEDS, (11, 23, 47))
+        self.assertEqual(len(BENCHMARK_SEEDS), 20)
+        self.assertEqual(BENCHMARK_SEEDS[:3], (11, 23, 47))
         self.assertIn("100 fresh seeds", source)
         self.assertIn("50 seeds were held out", source)
         self.assertIn("1,597/1,600", source)
-        self.assertIn("Grading still uses only seeds `(11, 23, 47)`", source)
+        self.assertIn("grading now uses 20 fixed seeds", source)
+        self.assertIn("seeds=BENCHMARK_SEEDS", source)
+        self.assertNotIn("seeds=(11, 23, 47)", source)
 
 
 if __name__ == "__main__":

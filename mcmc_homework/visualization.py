@@ -11,6 +11,7 @@ import numpy as np
 from matplotlib.figure import Figure
 
 from .experiments import (
+    BENCHMARK_SEEDS,
     METHODS,
     SWD_PASS_THRESHOLDS,
     BenchmarkResult,
@@ -266,17 +267,22 @@ def plot_ensemble_sampling_run(
             marker="o", markersize=3.0, color="#2468b4", label="combined-chain SWD",
         )
     else:
+        many_seeds = len(curve["base_seeds"]) > 6
+        others_labelled = False
         for index, (seed, scores) in enumerate(zip(curve["base_seeds"], curve["all_swd"], strict=True)):
             selected = int(seed) == ensemble.base_seed
             label = f"Seed {seed}" + (" (selected)" if selected else "")
             finite = np.isfinite(scores)
             if not np.all(finite):
                 label += " — non-finite"
+            if many_seeds and not selected:
+                label = f"Other {len(curve['base_seeds']) - 1} seeds" if not others_labelled else "_nolegend_"
+                others_labelled = True
             ax_swd.plot(
                 curve["target_evals"], np.where(finite, scores, np.nan),
-                color=colors(index % 10),
+                color="#888888" if many_seeds and not selected else colors(index % 10),
                 linewidth=2.6 if selected else 1.3,
-                alpha=1.0 if selected else 0.65,
+                alpha=1.0 if selected else (0.35 if many_seeds else 0.65),
                 linestyle="-" if selected else "--",
                 marker="o", markersize=5.0 if selected else 3.0,
                 zorder=4 if selected else 2,
@@ -342,7 +348,8 @@ def plot_ensemble_sampling_run(
         # the result banner/table. The figure only needs to identify its scope.
         title = (
             f"{target.name} — {ensemble.method}\n"
-            f"Paths and ACF: seed {ensemble.base_seed} | SWD curves: all 3 seeds"
+            f"Paths and ACF: seed {ensemble.base_seed} | "
+            f"SWD curves: {len(curve['base_seeds'])} evaluated seeds"
         )
     figure.suptitle(title, fontsize=11)
     figure.tight_layout(rect=(0, 0, 1, 0.95))
@@ -532,7 +539,7 @@ def metrics_html(
             _format_number(metrics["swd"]),
         ),
         (
-            "Official worst-repeat SWD target (base seeds 11, 23, 47)",
+            f"Official worst-repeat SWD target ({len(BENCHMARK_SEEDS)} benchmark seeds)",
             threshold_text,
         ),
         (
@@ -638,7 +645,7 @@ def benchmark_results_html(results: Sequence[BenchmarkResult]) -> str:
     return (
         "<div style='margin:0.4em 0 0.8em 0'>"
         "<b>Pass rule:</b> worst-repeat SWD must meet the target threshold and "
-        "all three benchmark ensembles must remain finite. Every ensemble receives "
+        "all evaluated ensembles must remain finite. Every ensemble receives "
         f"the same {results[0].target_eval_budget:,}-evaluation budget.<br>"
         f"<b>Homework status:</b> {escape(overall_status)}"
         "</div><table>"

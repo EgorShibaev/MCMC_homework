@@ -7,6 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from mcmc_homework import (
+    BENCHMARK_SEEDS,
+    DEFAULT_SETTINGS,
     SWD_PASS_THRESHOLDS,
     METHODS,
     TARGETS,
@@ -14,6 +16,7 @@ from mcmc_homework import (
     benchmark_passed,
     benchmark_results_html,
     benchmark_setting,
+    benchmark_all_settings,
     metrics_html,
     plot_ensemble_sampling_run,
     plot_swd_convergence,
@@ -23,6 +26,32 @@ from mcmc_homework import (
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_official_seed_list_and_default_benchmark_use_twenty(self) -> None:
+        self.assertEqual(len(BENCHMARK_SEEDS), 20)
+        streams = [seed + 101 * chain for seed in BENCHMARK_SEEDS for chain in range(8)]
+        self.assertEqual(len(set(streams)), 160)
+        with patch("mcmc_homework.experiments.benchmark_setting", return_value=([], {})) as run:
+            results = benchmark_all_settings(DEFAULT_SETTINGS)
+        self.assertEqual(len(results), 12)
+        self.assertEqual(run.call_count, 12)
+        for call in run.call_args_list:
+            self.assertEqual(call.kwargs["seeds"], BENCHMARK_SEEDS)
+            self.assertEqual(call.kwargs["target_eval_budget"], 40_000)
+
+    def test_twenty_seed_plot_has_all_curves_without_twenty_legend_entries(self) -> None:
+        ensembles, _ = benchmark_setting("gaussian", "RWMH", scale=.5, target_eval_budget=250)
+        curve = swd_convergence(ensembles, checkpoints=(100, 250))
+        figure = plot_ensemble_sampling_run(ensembles[-1], benchmark_curve=curve)
+        try:
+            self.assertEqual(len(figure.axes[2].lines), 21)
+            labels = figure.axes[2].get_legend_handles_labels()[1]
+            self.assertEqual(len(labels), 3)
+            self.assertIn(f"Seed {BENCHMARK_SEEDS[-1]} (selected)", labels)
+            self.assertIn("Other 19 seeds", labels)
+            self.assertIn("20 evaluated seeds", figure._suptitle.get_text())
+        finally:
+            plt.close(figure)
+
     def test_lab_plots_each_seed_and_moves_only_the_highlight(self) -> None:
         seeds = (47, 11, 23)  # labels must follow data, not a hard-coded order
         ensembles, _ = benchmark_setting(

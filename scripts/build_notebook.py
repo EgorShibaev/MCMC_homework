@@ -152,7 +152,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             ### Explicit pass criterion
 
-            A target–method row passes only when **the worst SWD over benchmark ensembles with base seeds `(11, 23, 47)` is at or below its pair-specific threshold** and no ensemble diverges:
+            A target–method row passes only when **the worst SWD over all 20 fixed seeds in `BENCHMARK_SEEDS` is at or below its pair-specific threshold** and no ensemble diverges:
 
             | target | RWMH | ULA | MALA | HMC |
             |---|---:|---:|---:|---:|
@@ -161,7 +161,7 @@ def build_notebook() -> nbf.NotebookNode:
             | 65:35 mixture | __MIXTURE_SWD__ |
             | 10:90 mixture (optional) | __IMBALANCED_SWD__ |
 
-            **Calibration:** chosen settings and their nearest slider values were tested on 100 fresh seeds per pair; limits use the largest calibration/official SWD plus 10%, rounded up to 0.005 without lowering previous limits. Another 50 seeds were held out: 1,597/1,600 exact/slider runs passed (three Gaussian MALA failures). A PASS is not proof of convergence. **Grading still uses only seeds `(11, 23, 47)`.** The 10:90 row is optional.
+            **Calibration:** a prior audit tested chosen settings and their nearest slider values on 100 fresh seeds per pair; limits use the largest calibration/then-official SWD plus 10%, rounded up to 0.005. Another 50 seeds were held out: 1,597/1,600 exact/slider runs passed (three Gaussian MALA failures). These limits are unchanged; **grading now uses 20 fixed seeds.** A PASS is not proof of convergence. The 10:90 row is optional.
 
             The numerical requirement is **PASS on all 12 core target–method rows**. Completing the homework also requires the six controlled investigations below, including your own screenshots and explanations. A passing table alone is not a complete submission. Every row receives the same total budget of **40,000 target evaluations per benchmark ensemble**, including burn-in and divided across all student-selected chains. One call to $\log\pi$ and one call to $\nabla\log\pi$ each count as one evaluation. Reference sampling, plotting, and metric calculations do not consume this sampling budget.
 
@@ -191,9 +191,9 @@ def build_notebook() -> nbf.NotebookNode:
 
             Thus, more chains create more independent attempts to explore the target but make every chain shorter and repeat the warm-up cost. More burn-in may reduce initialization bias but leaves fewer retained samples. Increasing HMC's $L$ lengthens each trajectory but reduces the number of HMC transitions. These trade-offs are part of the homework.
 
-            The official evaluation repeats the **entire $C$-chain ensemble** three times using base seeds `(11, 23, 47)`. Within a repeat with base seed $s$, chain $j=0,\ldots,C-1$ uses seed $s+101j$. All chains start from the supplied target start. Retained draws are combined for SWD; ESS and mode switches are calculated within each chain before aggregation, so chain boundaries are never counted as transitions.
+            The official evaluation repeats the **entire $C$-chain ensemble 20 times** using `BENCHMARK_SEEDS`. Each repeat gets 40,000 evaluations: **800,000 per row**, not a budget shared across seeds. Within a repeat with base seed $s$, chain $j=0,\ldots,C-1$ uses seed $s+101j$. All chains start from the supplied target start. Retained draws are combined within each repeat for SWD, never across repeats; ESS and switches are calculated within chains.
 
-            **Students may not change:** the 40,000-evaluation budget, the three benchmark base seeds, initial states, evaluation accounting, or SWD thresholds.
+            **Students may not change:** the 40,000-evaluation budget per repeat, the 20 benchmark base seeds, initial states, evaluation accounting, or SWD thresholds.
 
             Burn-in removes an initial transient. It cannot fix discretization bias, mode trapping, or a poorly tuned integrator.
             """.replace("__GAUSSIAN_SWD__", threshold_cells("gaussian"))
@@ -292,15 +292,11 @@ def build_notebook() -> nbf.NotebookNode:
             r"""
             ## 4. Interactive tuning lab
 
-            The lab evaluates one complete official benchmark row. Select a target and method, tune its scale, choose burn-in and the number of chains $C$, and press **Start sampling**. HMC also exposes leapfrog count $L$. Each of the three fixed repeats receives 40,000 target evaluations, shared across its $C$ chains (at most 120,000 calls per click). Changing $C$ or $L$ automatically changes the number of states produced by each chain.
+            Choose target, method, scale, burn-in, chains $C$, and HMC's $L$, then press **Start sampling**. **Seed repeats** selects 1–20 repeats (default 3), using the first $N$ seeds from the benchmark's identical `BENCHMARK_SEEDS` list. Each repeat gets 40,000 evaluations, split across its chains; 20 repeats cost at most 800,000 calls.
 
-            Settings are remembered per target–method pair during this lab session. Returning to a pair restores your tuning; a newly visited pair inherits the current controls, with scale clipped only if outside the new method's slider range. Switching methods does not automatically retune the scale for you or start sampling.
+            **Fewer than 20 repeats is exploratory, not an official PASS.** At 20 repeats, the lab and benchmark give identical results for identical settings. Repeats test randomness; they are not extra chains and their samples are not pooled. Changing controls does not run sampling. Settings are remembered per target–method pair; a new pair inherits current values, clipped only to valid slider bounds.
 
-            **Read the PASS / TUNE MORE banner, not just the SWD of the displayed paths.** Start always evaluates base seeds 11, 23, and 47 and grades their worst final SWD, exactly like the final benchmark. The accuracy panel shows a separate curve for each seed. The selected seed has a thick solid line and a “selected” legend label; the other two are thinner dashed lines. Switching **View traces** moves the highlight without changing the curves or the grade. Three repeats test robustness to randomness; they are not extra student-selected chains and their samples are not pooled across repeats.
-
-            The dashboard appears once. **View traces** selects which repeat's paths, within-chain ACF, and diagnostics to inspect; switching it does not rerun sampling or change the grade. The banner summarizes all three seeds; the compact table below the plot contains **only the selected seed's diagnostics**. Settings and state counts appear only in the controls above. A visually good seed can have SWD below the threshold while the setting still fails on another seed. Compare the same displayed base seed when collecting before/after screenshots.
-
-            Inspect all paths and traces before looking at SWD. Several short chains that remain in the same mode are not equivalent to genuine global exploration.
+            **View traces** selects a completed repeat's paths and diagnostics without rerunning. The SWD plot shows every evaluated seed, highlighting the selected one; with more than six, the others are grey. The banner summarizes all evaluated repeats; the table describes only the selected seed. Compare the same seed in screenshots. Several chains trapped in one mode do not show global exploration.
             """,
             "interactive",
         )
@@ -347,9 +343,9 @@ def build_notebook() -> nbf.NotebookNode:
 
             Record a justified choice for every row below. RWMH uses `scale = sigma`; ULA/MALA use `scale = eta`; HMC uses `scale = epsilon` plus `n_leapfrog = L`. The supplied values are starting guesses, not optimized answers. Keep a search log containing at least three distinct candidate configurations per row (at least 36 entries in total); report failures as well as improvements. You may search manually or with your own script.
 
-            For each candidate, record target, method, scale, $L$ if applicable, $C$, burn-in, and worst-repeat SWD. Every lab Start now performs the same three-repeat evaluation as the final benchmark. Compare at least your two strongest candidates per row before selecting your final configuration, and retain the per-repeat scores to show robustness. Do not substitute the displayed paths' single-repeat SWD for the grading metric. Changing a parameter is not mandatory when your experiments justify retaining its value.
+            For each candidate, record target, method, scale, $L$ if applicable, $C$, burn-in, repeat count, and worst-repeat SWD. Use fewer lab repeats for quick exploration, then compare your two strongest candidates per row on all 20 seeds. Retain per-repeat scores; a single displayed seed cannot establish PASS.
 
-            For every row, choose `scale`, `n_chains`, and `burn_fraction`; HMC rows additionally choose `n_leapfrog`. Choose them separately for all three targets. Do not change the official 40,000-evaluation budget, benchmark base seeds `(11, 23, 47)`, initial states, accounting rule, or SWD thresholds. The table gives each row a direct **PASS / TUNE MORE** status. In the overview plot each method's dashed requirement has the same colour as its curve; the legend states the pair-specific limit. Curves need not decrease monotonically.
+            For every row, choose `scale`, `n_chains`, and `burn_fraction`; HMC also chooses `n_leapfrog`. Do not change the per-repeat budget, 20 fixed `BENCHMARK_SEEDS`, initial states, accounting, or thresholds. The table reports **PASS / TUNE MORE**. Each method's dashed plot limit matches its curve colour; curves need not decrease monotonically.
 
             To check one candidate across the official repeats without rerunning all 12 rows, call `benchmark_setting(target_key, method, **candidate, seeds=BENCHMARK_SEEDS, target_eval_budget=BENCHMARK_TARGET_EVAL_BUDGET)`. Here `candidate` is a settings dictionary with the same fields as a row of `student_settings`. The returned pair is `(ensembles, summary)`; record `summary["worst_swd"]` in your log.
 
@@ -382,7 +378,7 @@ def build_notebook() -> nbf.NotebookNode:
                 benchmark_results = benchmark_all_settings(
                     student_settings,
                     target_eval_budget=BENCHMARK_TARGET_EVAL_BUDGET,
-                    seeds=(11, 23, 47),
+                    seeds=BENCHMARK_SEEDS,
                 )
                 display(HTML(benchmark_results_html(benchmark_results)))
                 plot_swd_convergence(benchmark_results)
@@ -491,7 +487,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             1. How do shorter chains trade off against independent restarts? Compare retained lengths and initialization effects at fixed burn-in fraction.
             2. Why might many chains starting at the same point still miss a mode? Compare pooled SWD, individual traces, and switches.
-            3. Does your preferred $C$ work across all three benchmark seeds? How does it depend on method and target?
+            3. Does your preferred $C$ work across all 20 benchmark seeds? How does it depend on method and target?
 
             **Screenshots:** $C=1$ versus $C=8$ for two contrasting pairs, including all traces (4).
 
@@ -525,7 +521,7 @@ def build_notebook() -> nbf.NotebookNode:
 
             - [ ] I inspected the separate implementation modules.
             - [ ] I tuned method scale, chain count, and burn-in for all 12 rows; I also tuned $L$ for HMC.
-            - [ ] I ran the unchanged 40,000-evaluation benchmark with all three fixed base seeds.
+            - [ ] I ran the unchanged 40,000-evaluation-per-repeat benchmark with all 20 fixed base seeds.
             - [ ] Every row in the benchmark table says **PASS** (12/12).
             - [ ] I reported mean $\pm$ SD and worst-repeat SWD.
             - [ ] My search log contains at least three candidates per row, including full benchmarks for the two strongest.

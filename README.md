@@ -37,8 +37,10 @@ counts as one unit. Students tune a separate proposal scale `sigma` for RWMH,
 step size `eta` for ULA and MALA, and HMC step size `epsilon` plus leapfrog count
 `L`. Every row also tunes burn-in and a chain count from 1 through 8.
 
-The entire selected multi-chain ensemble is repeated with base seeds
-`(11, 23, 47)`. A row passes when its **worst-repeat standardized
+The entire selected multi-chain ensemble is repeated with 20 fixed base seeds:
+`11, 23, 47`, followed by `1009, 2009, …, 17009` (`BENCHMARK_SEEDS`).
+Each repeat receives 40,000 evaluations, up to 800,000 per row and 9.6 million
+for all 12 core rows. A row passes when its **worst-repeat standardized
 sliced-Wasserstein distance** meets the limit for that distribution–method pair,
 with no divergent ensemble. The notebook lists all limits, generated directly
 from `SWD_PASS_THRESHOLDS[(target, method)]` in `experiments.py`. All 12
@@ -52,9 +54,9 @@ slider value: 10% above the largest calibration/official SWD, rounded upward to
 0.005 without lowering previous limits. Another 50 seeds per setting are held
 out, not used to choose limits: 1,597/1,600 exact/slider runs passed (three
 Gaussian MALA failures). The audit has 4,800 fresh-seed runs in total. These
-are empirical finite-budget limits, not guarantees; grading still uses only
-the three official seeds. Under these limits, 11/16 starting configurations
-already pass; the experimental analysis remains required.
+are empirical finite-budget limits, not guarantees. This audit preceded the
+expansion to 20 grading seeds; limits are unchanged. Experimental analysis
+remains required even when a starting configuration passes.
 The 10:90 mixture also has pair-specific limits for optional lab exploration;
 it remains outside the 12 required core benchmark rows.
 
@@ -63,16 +65,18 @@ and pass thresholds are fixed. Choosing more chains makes each chain shorter;
 increasing burn-in leaves fewer scored states; increasing HMC's `L` reduces its
 number of transitions. These allocation trade-offs are part of the assignment.
 
-The interactive lab evaluates the same three repeats as the final benchmark on
-every Start click: 40,000 calls per repeat, at most 120,000 calls total. Its
-PASS / TUNE MORE banner uses the **worst-repeat final SWD**. The lab accuracy
-panel plots all three seed curves, highlighting the selected seed with a thicker
-solid line and a labelled legend entry; the other curves are thinner and dashed.
+The lab's **seed repeats** slider selects 1–20 repeats (default 3), using the
+first N entries of the same benchmark seed list. Below 20, results are labelled
+**EXPLORATORY**, never an official PASS. With 20 repeats and identical settings,
+lab and benchmark results match. Each repeat costs at most 40,000 calls; 20
+repeats cost at most 800,000. The accuracy panel plots every evaluated seed,
+highlighting the selected one; above six repeats, other curves are grey and
+share one legend entry to keep the plot readable.
 The View traces selector only changes which repeat's paths and diagnostics are
 shown; it does not rerun sampling or change the grade. A low single-repeat SWD
 is not a benchmark pass. The dashboard and metric table are replaced on every
 click, not appended.
-The banner summarizes the three repeats; the compact diagnostics table contains
+The banner summarizes evaluated repeats; the compact diagnostics table contains
 only the selected seed's results. Settings and state counts stay in the controls.
 The lab remembers settings per target–method pair within the session. New pairs
 inherit the current controls (scale is clipped only to valid slider bounds);
@@ -83,7 +87,7 @@ returning to a pair restores its saved tuning without launching sampling.
 A passing benchmark table alone is not a complete submission. Students keep a
 search log with at least three candidate configurations per target–method row
 (at least 36 entries), then evaluate the two strongest candidates per row on all
-three benchmark repeats. Failed runs remain in the log.
+20 benchmark repeats. Failed runs remain in the log.
 
 The notebook replaces Tasks A–D with six controlled investigations:
 

@@ -24,7 +24,8 @@ from .targets import Array, TARGETS
 
 METHODS = ("RWMH", "ULA", "MALA", "HMC")
 CORE_TARGET_KEYS = ("gaussian", "banana", "mixture")
-BENCHMARK_SEEDS = (11, 23, 47)
+# Fixed before evaluation; lab repeats use a prefix of this same list.
+BENCHMARK_SEEDS = (11, 23, 47, *range(1009, 17010, 1000))
 BENCHMARK_TARGET_EVAL_BUDGET = 40_000
 MAX_STUDENT_CHAINS = 8
 
@@ -34,7 +35,7 @@ MAX_STUDENT_CHAINS = 8
 # value, at 40,000 evaluations per ensemble. Add 10% to the calibration/official
 # maximum and round upward to 0.005, never lowering prior limits. Another 50
 # seeds per setting are held out for validation, not used to select the limits.
-# The 10:90 case is optional; grading still uses the three official seeds.
+# The 10:90 case is optional; grading uses all 20 official seeds.
 # Some starting settings now pass. Passing the numerical gate does not replace
 # the notebook's controlled investigations and evidence.
 SWD_PASS_THRESHOLDS: dict[tuple[str, str], float] = {

@@ -8,11 +8,51 @@ from IPython.utils.capture import capture_output
 
 from mcmc_homework import (
     BENCHMARK_SEEDS, DEFAULT_SETTINGS, SWD_PASS_THRESHOLDS,
-    benchmark_passed, build_sampling_lab,
+    benchmark_passed, build_sampling_lab, benchmark_setting,
 )
 
 
 class WidgetTests(unittest.TestCase):
+    def test_repeat_count_uses_benchmark_prefix_and_full_run_matches(self) -> None:
+        with patch("mcmc_homework.widgets.BENCHMARK_TARGET_EVAL_BUDGET", 800), \
+             patch.dict(SWD_PASS_THRESHOLDS, {("gaussian", "RWMH"): 100.0}):
+            lab = build_sampling_lab()
+            self.addCleanup(lab.close)
+            for count in (1, 5, 20):
+                lab.n_seeds.value = count
+                lab.run_button.click()
+                self.assertEqual(tuple(e.base_seed for e in lab.last_ensembles), BENCHMARK_SEEDS[:count])
+                self.assertEqual(tuple(lab.view_seed.options), tuple((f"Base seed {s}", s) for s in BENCHMARK_SEEDS[:count]))
+                self.assertIn(f"{count} seed repeat", lab.result_status.value)
+                if count == 1:
+                    self.assertIn("SD unavailable", lab.result_status.value)
+                self.assertIn(f"{800 * count:,} calls", lab.budget.value)
+                if count < 20:
+                    self.assertIn("EXPLORATORY", lab.result_status.value)
+                    self.assertNotIn("PASS", lab.result_status.value)
+                else:
+                    self.assertIn("PASS", lab.result_status.value)
+            _, expected = benchmark_setting(
+                "gaussian", "RWMH", scale=lab.scale.value, n_chains=lab.n_chains.value,
+                burn_fraction=lab.burn_fraction.value, target_eval_budget=800,
+            )
+            self.assertEqual(lab.last_summary, expected)
+            lab.view_seed.value = BENCHMARK_SEEDS[-1]
+            with patch.object(lab, "run", side_effect=AssertionError("Unexpected resampling")):
+                lab.n_seeds.value = 1
+                self.assertEqual(len(lab.last_ensembles), 20)
+                self.assertEqual(lab.last_ensemble.base_seed, BENCHMARK_SEEDS[-1])
+                self.assertIn("20 seed repeats", lab.result_status.value)
+                self.assertIn("Settings changed", lab.status.value)
+            lab.run_button.click()
+            self.assertEqual(lab.view_seed.value, BENCHMARK_SEEDS[0])
+            self.assertEqual(len(lab.output.outputs), 2)
+            self.assertIn("EXPLORATORY", lab.result_status.value)
+            lab.n_seeds.value = 7
+            lab.method.value = "HMC"
+            lab.target.value = "banana"
+            self.assertEqual(lab.n_seeds.value, 7)
+
     def test_switching_pairs_preserves_tuning_without_starting_sampling(self) -> None:
         lab = build_sampling_lab()
         self.addCleanup(lab.close)
@@ -56,12 +96,12 @@ class WidgetTests(unittest.TestCase):
             lab.run_button.click()
         self.assertEqual(published.outputs, [])  # no frontend display broadcasts
         self.assertEqual(plt.get_fignums(), before_figures)
-        self.assertEqual([e.base_seed for e in lab.last_ensembles], list(BENCHMARK_SEEDS))
+        self.assertEqual([e.base_seed for e in lab.last_ensembles], list(BENCHMARK_SEEDS[:3]))
         self.assertAlmostEqual(lab.last_ensembles[0].metrics["swd"], 0.0395868323, places=7)
         self.assertAlmostEqual(lab.last_summary["worst_swd"], 0.0725764047, places=7)
         self.assertAlmostEqual(lab._last_curve["worst_swd"][-1], lab.last_summary["worst_swd"])
         self.assertFalse(benchmark_passed("gaussian", "RWMH", lab.last_summary))
-        self.assertIn("TUNE MORE", lab.result_status.value)
+        self.assertIn("EXPLORATORY", lab.result_status.value)
         self.assertIn("0.0726", lab.result_status.value)
         self.assertEqual(len(lab.output.outputs), 2)
         self.assertIn("image/png", lab.output.outputs[0]["data"])
@@ -84,7 +124,7 @@ class WidgetTests(unittest.TestCase):
             lab.view_seed.value = 47
         self.assertEqual(lab.last_ensemble.base_seed, 47)
         self.assertEqual(len(lab.output.outputs), 2)
-        self.assertIn("TUNE MORE", lab.result_status.value)
+        self.assertIn("EXPLORATORY", lab.result_status.value)
         # Repeated Start replaces output; use the cached numerical result here.
         with patch.object(lab, "run", return_value=lab.last_ensemble) as run:
             lab.run_button.click()
