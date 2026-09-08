@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+from tqdm.auto import tqdm
 
 from .metrics import (
     compute_metrics,
@@ -281,22 +282,31 @@ def benchmark_setting(
     n_chains: int = 1,
     burn_fraction: float = 0.25,
     n_leapfrog: int = 10,
+    show_progress: bool = False,
+    progress_desc: str | None = None,
 ) -> tuple[list[EnsembleExperiment], dict[str, float]]:
     """Evaluate one ensemble setting over fixed independent benchmark repeats."""
 
-    experiments = [
-        run_ensemble_experiment(
+    seed_values = tuple(int(seed) for seed in seeds)
+    iterator = tqdm(
+        seed_values,
+        desc=progress_desc or f"{target_key} / {method}",
+        unit="seed",
+        disable=not show_progress,
+        leave=True,
+    )
+    experiments = []
+    for seed in iterator:
+        experiments.append(run_ensemble_experiment(
             target_key=target_key,
             method=method,
             scale=scale,
             target_eval_budget=target_eval_budget,
             n_chains=n_chains,
             burn_fraction=burn_fraction,
-            base_seed=int(seed),
+            base_seed=seed,
             n_leapfrog=n_leapfrog,
-        )
-        for seed in seeds
-    ]
+        ))
     return experiments, summarize_experiments(experiments)
 
 
@@ -332,6 +342,7 @@ def benchmark_all_settings(
     settings: Mapping[tuple[str, str], Mapping[str, float | int]],
     target_eval_budget: int = BENCHMARK_TARGET_EVAL_BUDGET,
     seeds: Sequence[int] = BENCHMARK_SEEDS,
+    show_progress: bool = True,
 ) -> list[BenchmarkResult]:
     """Benchmark every core target-method ensemble at one fixed work budget."""
 
@@ -350,6 +361,8 @@ def benchmark_all_settings(
                 n_chains=n_chains,
                 burn_fraction=burn_fraction,
                 n_leapfrog=n_leapfrog,
+                show_progress=show_progress,
+                progress_desc=f"{target_key} / {method}",
             )
             results.append(
                 BenchmarkResult(

@@ -72,6 +72,8 @@ lab and benchmark results match. Each repeat costs at most 40,000 calls; 20
 repeats cost at most 800,000. The accuracy panel plots every evaluated seed,
 highlighting the selected one; above six repeats, other curves are grey and
 share one legend entry to keep the plot readable.
+Both the lab and full benchmark show a `tqdm` progress bar that advances once
+per completed seed.
 The View traces selector only changes which repeat's paths and diagnostics are
 shown; it does not rerun sampling or change the grade. A low single-repeat SWD
 is not a benchmark pass. The dashboard and metric table are replaced on every

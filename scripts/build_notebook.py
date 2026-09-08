@@ -297,6 +297,8 @@ def build_notebook() -> nbf.NotebookNode:
             **Fewer than 20 repeats is exploratory, not an official PASS.** At 20 repeats, the lab and benchmark give identical results for identical settings. Repeats test randomness; they are not extra chains and their samples are not pooled. Changing controls does not run sampling. Settings are remembered per target–method pair; a new pair inherits current values, clipped only to valid slider bounds.
 
             **View traces** selects a completed repeat's paths and diagnostics without rerunning. The SWD plot shows every evaluated seed, highlighting the selected one; with more than six, the others are grey. The banner summarizes all evaluated repeats; the table describes only the selected seed. Compare the same seed in screenshots. Several chains trapped in one mode do not show global exploration.
+
+            The progress bar advances once per completed seed.
             """,
             "interactive",
         )

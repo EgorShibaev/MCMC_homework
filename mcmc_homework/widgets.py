@@ -126,6 +126,7 @@ class SamplingLab:
         self.output = widgets.Output(
             layout=widgets.Layout(border="1px solid #ddd", padding="6px")
         )
+        self.progress_output = widgets.Output()
 
         controls = widgets.VBox(
             [
@@ -141,7 +142,9 @@ class SamplingLab:
                 widgets.HBox([self.run_button, self.status]),
             ]
         )
-        self.ui = widgets.VBox([controls, self.result_status, self.view_seed, self.output])
+        self.ui = widgets.VBox([
+            controls, self.progress_output, self.result_status, self.view_seed, self.output
+        ])
         self.target.observe(self._on_configuration_change, names="value")
         self.method.observe(self._on_configuration_change, names="value")
         self.n_chains.observe(self._update_allocation_preview, names="value")
@@ -242,16 +245,20 @@ class SamplingLab:
             self.status.value = "Settings changed — press Start to evaluate."
 
     def run(self) -> EnsembleExperiment:
-        ensembles, summary = benchmark_setting(
-            target_key=self.target.value,
-            method=self.method.value,
-            scale=float(self.scale.value),
-            target_eval_budget=BENCHMARK_TARGET_EVAL_BUDGET,
-            n_chains=int(self.n_chains.value),
-            burn_fraction=float(self.burn_fraction.value),
-            seeds=BENCHMARK_SEEDS[:int(self.n_seeds.value)],
-            n_leapfrog=int(self.n_leapfrog.value),
-        )
+        self.progress_output.clear_output(wait=True)
+        with self.progress_output:
+            ensembles, summary = benchmark_setting(
+                target_key=self.target.value,
+                method=self.method.value,
+                scale=float(self.scale.value),
+                target_eval_budget=BENCHMARK_TARGET_EVAL_BUDGET,
+                n_chains=int(self.n_chains.value),
+                burn_fraction=float(self.burn_fraction.value),
+                seeds=BENCHMARK_SEEDS[:int(self.n_seeds.value)],
+                n_leapfrog=int(self.n_leapfrog.value),
+                show_progress=True,
+                progress_desc=f"{self.target.value} / {self.method.value}",
+            )
         self.last_ensembles = ensembles
         self.last_summary = summary
         self._last_curve = swd_convergence(ensembles)

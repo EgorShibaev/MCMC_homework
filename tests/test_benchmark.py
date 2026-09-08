@@ -26,6 +26,18 @@ from mcmc_homework import (
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_seed_progress_wraps_exactly_the_requested_repeats(self) -> None:
+        seeds = (7, 13, 29, 31)
+        with patch("mcmc_homework.experiments.tqdm", side_effect=lambda values, **kwargs: values) as bar:
+            experiments, _ = benchmark_setting(
+                "gaussian", "RWMH", scale=.5, seeds=seeds,
+                target_eval_budget=100, show_progress=True, progress_desc="test seeds",
+            )
+        self.assertEqual([e.base_seed for e in experiments], list(seeds))
+        bar.assert_called_once_with(
+            seeds, desc="test seeds", unit="seed", disable=False, leave=True,
+        )
+
     def test_official_seed_list_and_default_benchmark_use_twenty(self) -> None:
         self.assertEqual(len(BENCHMARK_SEEDS), 20)
         streams = [seed + 101 * chain for seed in BENCHMARK_SEEDS for chain in range(8)]
